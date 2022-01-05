@@ -1,0 +1,369 @@
+<script>
+  import Gauss from "./Gauss.svelte";
+  import { Canvas, Layer, t } from "svelte-canvas";
+
+  let w, h;
+  let samples = []
+  let view3d = 'pdf'
+
+  let sampleLimit = 0
+
+  const formatter = new Intl.NumberFormat(navigator.locale, { maximumFractionDigits: 2, minimumFractionDigits: 2,signDisplay: 'always' })
+
+  $: usedSamples = samples.slice(0, sampleLimit)
+
+  $: mean = {
+  	x: usedSamples.reduce((a, s) => s.x + a, 0) / (usedSamples.length||1),
+  	y: usedSamples.reduce((a, s) => s.y + a, 0) / (usedSamples.length||1),
+  }
+
+  $: variance = {
+  	x: usedSamples.reduce((a, s) => Math.pow(s.x - mean.x, 2) + a, 0) / ((usedSamples.length - 1) || 1),
+  	y: usedSamples.reduce((a, s) => Math.pow(s.y - mean.y, 2) + a, 0) / ((usedSamples.length - 1) || 1),
+  }
+
+  $: covariance = usedSamples.reduce((a, s) => (s.x-mean.x)*(s.y-mean.y) + a, 0) / ((usedSamples.length-1)||1)
+  $: correlation = covariance / (Math.sqrt(variance.x * variance.y) || 1)
+
+  $: crossCovariance = [
+  	variance.x, covariance,
+  	covariance, variance.y
+  ]
+
+  function eigenValues([a,b,c,d]) {
+  	return [
+  		(a+d) / 2 + Math.sqrt((a+d)*(a+d)/4 - (a*d-b*c)),
+  		(a+d) / 2 - Math.sqrt((a+d)*(a+d)/4 - (a*d-b*c))
+  	]
+  }
+
+  function eigenVector(lambda, [a,b,c,d]) {
+  	return [d-lambda, -c]
+  }
+
+  function eigenAngle(lambda, [a,b,c,d]) {
+  	if(b==0 && a>=c) {
+  		return 0
+  	} else if(b==0 && a<c) {
+  		return Math.PI
+  	} else {
+  		return Math.atan2(lambda-a,b)
+  	}
+  }
+
+  $: eigenVals = eigenValues(crossCovariance)
+  $: eigenVecs = eigenVals.map(lambda => eigenVector(lambda, crossCovariance))
+
+  $: theta = eigenAngle(Math.max(...eigenVals), crossCovariance)
+
+  $: render = ({ context, width, height }) => {
+  	context.beginPath()
+  	context.lineWidth = 1;
+  	context.strokeStyle = 'black'
+  	const coordPadding = 20
+  	const arrowWidth = 5
+  	const arrowLength = 10
+  	const coordLength = 50
+    context.font = 'italic 10pt sans-serif';
+
+  	context.moveTo(coordPadding,coordPadding)
+  	context.lineTo(coordPadding,coordLength)
+  	context.lineTo(coordPadding-arrowWidth,coordLength-arrowLength)
+  	context.moveTo(coordPadding,coordLength)
+  	context.lineTo(coordPadding+arrowWidth,coordLength-arrowLength)
+  	context.moveTo(coordPadding,coordPadding)
+  	context.lineTo(coordLength,coordPadding)
+  	context.lineTo(coordLength-arrowLength,coordPadding-arrowWidth)
+  	context.moveTo(coordLength,coordPadding)
+  	context.lineTo(coordLength-arrowLength,coordPadding+arrowWidth)
+  	context.stroke()
+
+  	context.textAlign = 'center'
+  	context.textBaseline = 'middle'
+  	context.fillStyle = '#5c5'
+  	context.fillText('X',coordLength + arrowLength,coordPadding)
+  	context.fillStyle = '#c55'
+  	context.fillText('Y',coordPadding,coordLength + arrowLength)
+
+	context.fillStyle = `#88f`;
+    context.beginPath();
+    for (var i = usedSamples.length - 1; i >= 0; i--) {
+    	let s = usedSamples[i]
+    	context.moveTo(s.x, s.y)
+    	context.arc(s.x, s.y, 3, 0, Math.PI * 2);
+    }
+    context.fill();
+
+    context.beginPath();
+	context.fillStyle = `#c88`;
+    for (var i = usedSamples.length - 1; i >= 0; i--) {
+    	let s = usedSamples[i]
+    	context.moveTo(5, s.y)
+    	context.arc(5, s.y, 3, 0, Math.PI * 2);
+    }
+    context.fill();
+
+    context.beginPath();
+	context.fillStyle = `#8c8`;
+    for (var i = usedSamples.length - 1; i >= 0; i--) {
+    	let s = usedSamples[i]
+    	context.moveTo(s.x, 5)
+    	context.arc(s.x, 5, 3, 0, Math.PI * 2);
+    }
+    context.fill();
+
+	context.fillStyle = `#aaa2`;
+	context.strokeStyle = `#0003`;
+	context.lineWidth = 3;
+
+	context.moveTo(mean.x, mean.y)
+
+    context.beginPath();
+	context.ellipse(mean.x, mean.y, Math.sqrt(Math.abs(Math.max(...eigenVals))), Math.sqrt(Math.abs(Math.min(...eigenVals))), theta, 0, Math.PI * 2);
+    context.fill();
+    context.stroke()
+
+	context.moveTo(mean.x, mean.y)
+    context.beginPath();
+	context.fillStyle = `#aaa`;
+	context.ellipse(mean.x, mean.y, 3, 3, 0, 0, Math.PI * 2);
+    context.fill();
+    context.moveTo(mean.x, mean.y)
+	context.strokeStyle = `#aaa`;
+	context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(mean.x, mean.y)
+    context.lineTo(mean.x+Math.sqrt(eigenVals[0])*(eigenVecs[0][0])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1]), mean.y+Math.sqrt(eigenVals[0])*(eigenVecs[0][1])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1]))
+    context.moveTo(mean.x, mean.y)
+    context.lineTo(mean.x+Math.sqrt(eigenVals[1])*(eigenVecs[1][0])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1]), mean.y+Math.sqrt(eigenVals[1])*(eigenVecs[1][1])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1]))
+    context.stroke()
+
+
+    context.font = 'italic 12pt sans-serif';
+    context.fillText("λ₁", 
+    	mean.x+ 0.5 * Math.sqrt(eigenVals[0])*(eigenVecs[0][0])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])
+    	+ 18 * (eigenVecs[1][1])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
+    	, 
+    	mean.y+ 0.5 * Math.sqrt(eigenVals[0])*(eigenVecs[0][1])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])
+    	+ 18 * (eigenVecs[1][0])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
+    )
+
+    context.fillText("λ₂", 
+    	mean.x+ 0.5 * Math.sqrt(eigenVals[1])*(eigenVecs[1][0])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
+    	+ 18 * (eigenVecs[0][1])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1]), 
+    	mean.y+ 0.5 * Math.sqrt(eigenVals[1])*(eigenVecs[1][1])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
+    	+ 18 * (eigenVecs[0][0])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])
+    )
+
+
+    if(usedSamples.length) {
+		context.fillStyle = `#aaa`;
+		context.strokeStyle = `#aaa`;
+		context.lineWidth = 2;
+	    context.beginPath();
+	    context.moveTo(mean.x - Math.sqrt(variance.x), coordPadding);
+	    context.lineTo(mean.x + Math.sqrt(variance.x), coordPadding);
+	    context.moveTo(coordPadding,mean.y - Math.sqrt(variance.y));
+	    context.lineTo(coordPadding,mean.y + Math.sqrt(variance.y));
+	    context.stroke()    
+	    context.moveTo(mean.x - Math.sqrt(variance.x), coordPadding);
+		context.ellipse(mean.x, coordPadding, 3, 3, 0, 0, Math.PI * 2);
+	    context.moveTo(coordPadding, mean.y - Math.sqrt(variance.y));
+		context.ellipse(coordPadding, mean.y, 3, 3, 0, 0, Math.PI * 2);
+	    context.fill();
+
+	    context.fillStyle = `#8c8`
+	    context.font = 'italic 12pt sans-serif';
+	    context.fillText('μX', mean.x, 35)
+	    context.fillText('√σX', mean.x - 20 - Math.sqrt(variance.x), 20)
+	    context.fillStyle = `#c88`
+	    context.fillText('μY', 35, mean.y)
+	    context.fillText('√σY', 20, mean.y - 20 - Math.sqrt(variance.y))
+
+    }
+
+  };
+
+  function addSample(evt) {
+  	samples = [...samples.slice(0, sampleLimit), {x: evt.pageX, y: evt.pageY}]
+  	sampleLimit = samples.length
+  }
+
+  function clearSamples() {
+  	samples = []
+  	sampleLimit = samples.length
+
+  }
+
+  
+</script>
+
+<style>
+	.container {
+		display: grid;
+		grid-template-columns: [all-start intro-start gl-start] minmax(min-content,1fr) minmax(min-content,1fr) minmax(min-content,2fr) [gl-end intro-end right-start] minmax(min-content,2fr) [right-end all-end];
+		grid-template-rows: [all-start right-start] 1fr [intro-start] 1fr [intro-end gl-start] 1fr  [ gl-end all-end right-end];
+		gap:  1em;
+		box-sizing: border-box;
+		height: 100%;
+	}
+
+	:global(body, html, #root) {
+		height: 100%;
+	}
+
+	.intro {
+		grid-area: intro;
+		align-self: center;
+		justify-self: center;
+		pointer-events: none;
+		font-style: italic;
+	}
+
+	.intro.hidden {
+		display: none;
+	}
+
+	.menu {
+		grid-area: right;
+		overflow: hidden;
+		padding: 1em 2em 1em 1em;
+		background-color: #fffa;
+		overflow-y:  auto;
+		max-height: 100%;
+		max-width: 100%;
+		height: 100%;
+		box-sizing: border-box;
+	}
+
+	:global(canvas) {
+		grid-area: all;
+		width: 100% !important;
+		height: 100% !important;
+	}
+
+	:global(body) {
+		margin: 0;
+		padding:  0;
+	}
+
+	dl {
+		display: grid;
+		grid-template-columns: [full-start key-start] max-content [key-end value-start] auto [value-end full-end];
+		gap: 0.5em 1em;
+	}
+
+	dt {
+		grid-column: key;
+	}
+
+	dd {
+		grid-column: value;
+		margin: 0;
+		justify-self: end;
+		text-align: right;
+	}
+
+	.plainlist  {
+		list-style: none;
+		margin:0;
+		padding: 0;
+	}
+
+	:global(.gl) {
+		grid-area: gl;
+		width: 100%;
+		height: 100%;
+	}
+
+  input {
+    margin: 0;
+  }
+</style>
+
+<svelte:window bind:innerWidth={w} bind:innerHeight={h} />
+
+<div class="container">
+	<Canvas width={w} height={h} on:click={addSample}>
+	  <Layer {render} />
+	</Canvas>
+
+  <Gauss onclick={addSample} class="gl" view={view3d} show={view3d != 'no'} mean={mean} variance={variance} correlation={correlation} remap={(x,y) => {
+    const vmin = Math.min(w,h)
+    return [vmin/2 + x*vmin*2, vmin/2 + y*vmin*2]
+  }} />
+
+	<div class="intro" class:hidden={samples.length > 0}>
+		Click anywere to place some sample points.
+	</div>
+
+	<div class="menu">
+		<h1>Gaussian Estimator</h1>
+		<p>
+			Click anywhere to place points/samples.
+		</p>
+		<p>
+			Parameters of a Gaussian distribution will be estimated. 
+		</p>
+		<dl>
+			<dt>Number of samples</dt>
+			<dd>{sampleLimit}/{samples.length}</dd>
+		</dl>
+    <dl>
+      <dt><label for="history">History</label></dt>
+      <dd><input disabled={samples.length < 1} id="history" type="range" min="0" max={samples.length} bind:value={sampleLimit}></dd>
+      <dt>3D</dt>
+      <dd style="display: flex; gap: 1em">
+        <label><input type="radio" bind:group={view3d} name="3d" value="no"> None</label>
+        <label><input type="radio" bind:group={view3d} name="3d" value="pdf"> PDF</label>
+        <label><input type="radio" bind:group={view3d} name="3d" value="cdf"> CDF</label>
+      </dd>
+    </dl>
+		<h2>Estimations</h2>
+		<dl>
+			<dt>Mean(X)</dt>
+			<dd>&mu;<sub>X</sub> = {formatter.format(mean.x)}</dd>
+			<dt>Mean(Y)</dt>
+			<dd>&mu;<sub>Y</sub> = {formatter.format(mean.y)}</dd>
+			<dt>Variance(X)</dt>
+			<dd>&sigma;<sub>X</sub> = {formatter.format(variance.x)}</dd>
+			<dt>Variance(Y)</dt>
+			<dd>&sigma;<sub>Y</sub> = {formatter.format(variance.y)}</dd>
+			<dt>Standard Deviation(X)</dt>
+			<dd>&Sqrt;&sigma;<sub>X</sub> = {formatter.format(Math.sqrt(variance.x))}</dd>
+			<dt>Standard Deviation(Y)</dt>
+			<dd>&Sqrt;&sigma;<sub>Y</sub> = {formatter.format(Math.sqrt(variance.y))}</dd>
+			<dt>Covariance(X,Y)</dt>
+			<dd>K<sub>XY</sub> = K<sub>YX</sub> ={formatter.format(covariance)}</dd>
+			<dt>Correlation(X,Y)</dt>
+			<dd>&rho;<sub>XY</sub> = {formatter.format(correlation)}</dd>
+			<dt>CovarianceMatrix(X,Y)</dt>
+			<dd><span style="white-space: nowrap;">&Sigma;<sub>XY</sub> = {formatter.format(crossCovariance[0])}; {formatter.format(crossCovariance[1])}</span><br><span style="white-space: nowrap;">{formatter.format(crossCovariance[2])}; {formatter.format(crossCovariance[3])}</span></dd>
+			<dt>&Sigma;<sub>XY</sub> eigenvalues</dt>
+			<dd>&lambda;<sub>1</sub> = {formatter.format(eigenVals[0])}</dd>
+			<dd>&lambda;<sub>2</sub> = {formatter.format(eigenVals[1])}</dd>
+			<dt>&Sigma;<sub>XY</sub> eigenvectors</dt>
+			<dd style="white-space: nowrap;">v<sub>1</sub> = [{eigenVecs[0].map(formatter.format).join(';')}]</dd>
+			<dd style="white-space: nowrap;">v<sub>2</sub> = [{eigenVecs[1].map(formatter.format).join(';')}]</dd>
+		</dl>
+		<h2>Calculation</h2>
+		<ul class="plainlist">
+			<li><code>&mu;<sub>X</sub> = sum(X)/(length(X))</code></li>
+
+			<li><code>&mu;<sub>Y</sub> = sum(Y)/(length(Y))</code></li>
+
+			<li><code>&sigma;<sub>X</sub> = sum(X - &mu;<sub>X</sub>)/(length(X) - 1)</code></li>
+
+			<li><code>&sigma;<sub>Y</sub> = sum(Y - &mu;<sub>Y</sub>)/(length(Y) - 1)</code></li>
+
+			<li><code>K<sub>XY</sub> = <code>K<sub>YX</sub> = sum((X-&mu;<sub>X</sub>)&middot;(Y-&mu;<sub>Y</sub>))/(length(X)-1)</code></li>
+
+			<li><code>&rho;<sub>XY</sub> = K<sub>XY</sub> / sqrt(&sigma;<sub>X</sub>&middot;&sigma;<sub>Y</sub>)</code></li>
+
+			<li><code>&Sigma;<sub>XY</sub> = [&sigma;<sub>X</sub>, K<sub>XY</sub>, &sigma;<sub>Y</sub>, K<sub>YX</sub>]</code></li>
+
+			<li><code>&lambda;<sub>1,2</sub> = (&sigma;<sub>X</sub>+&sigma;<sub>Y</sub>)/2 &plusmn; sqrt((&sigma;<sub>X</sub>+&sigma;<sub>Y</sub>)<sup>2</sup>/4 - (&sigma;<sub>X</sub>&middot;&sigma;<sub>Y</sub>-K<sub>XY</sub>&middot;K<sub>YX</sub>))</code></li>
+
+		</ul>
+	</div>
+</div>
