@@ -8,6 +8,8 @@
 
   let sampleLimit = 0
 
+  $: vmin = Math.min(w,h)
+
   const formatter = new Intl.NumberFormat(navigator.locale, { maximumFractionDigits: 2, minimumFractionDigits: 2,signDisplay: 'always' })
 
   $: usedSamples = samples.slice(0, sampleLimit)
@@ -57,6 +59,7 @@
   $: theta = eigenAngle(Math.max(...eigenVals), crossCovariance)
 
   $: render = ({ context, width, height }) => {
+  	const vmin = Math.min(width, height)
   	context.beginPath()
   	context.lineWidth = 1;
   	context.strokeStyle = 'black'
@@ -89,8 +92,8 @@
     context.beginPath();
     for (var i = usedSamples.length - 1; i >= 0; i--) {
     	let s = usedSamples[i]
-    	context.moveTo(s.x, s.y)
-    	context.arc(s.x, s.y, 3, 0, Math.PI * 2);
+    	context.moveTo(s.x*vmin, s.y*vmin)
+    	context.arc(s.x*vmin, s.y*vmin, 3, 0, Math.PI * 2);
     }
     context.fill();
 
@@ -98,8 +101,8 @@
 	context.fillStyle = `#c88`;
     for (var i = usedSamples.length - 1; i >= 0; i--) {
     	let s = usedSamples[i]
-    	context.moveTo(5, s.y)
-    	context.arc(5, s.y, 3, 0, Math.PI * 2);
+    	context.moveTo(5, s.y*vmin)
+    	context.arc(5, s.y*vmin, 3, 0, Math.PI * 2);
     }
     context.fill();
 
@@ -107,8 +110,8 @@
 	context.fillStyle = `#8c8`;
     for (var i = usedSamples.length - 1; i >= 0; i--) {
     	let s = usedSamples[i]
-    	context.moveTo(s.x, 5)
-    	context.arc(s.x, 5, 3, 0, Math.PI * 2);
+    	context.moveTo(s.x*vmin, 5)
+    	context.arc(s.x*vmin, 5, 3, 0, Math.PI * 2);
     }
     context.fill();
 
@@ -116,43 +119,50 @@
 	context.strokeStyle = `#0003`;
 	context.lineWidth = 3;
 
-	context.moveTo(mean.x, mean.y)
+	context.moveTo(vmin*mean.x, vmin*mean.y)
 
-    context.beginPath();
-	context.ellipse(mean.x, mean.y, Math.sqrt(Math.abs(Math.max(...eigenVals))), Math.sqrt(Math.abs(Math.min(...eigenVals))), theta, 0, Math.PI * 2);
+  context.beginPath();
+	context.ellipse(
+		mean.x*vmin, 
+		mean.y*vmin, 
+		vmin*Math.sqrt(Math.abs(Math.max(...eigenVals))), 
+		vmin*Math.sqrt(Math.abs(Math.min(...eigenVals))), 
+		theta, 0, Math.PI * 2);
     context.fill();
     context.stroke()
 
-	context.moveTo(mean.x, mean.y)
+	context.moveTo(vmin*mean.x, vmin*mean.y)
     context.beginPath();
 	context.fillStyle = `#aaa`;
-	context.ellipse(mean.x, mean.y, 3, 3, 0, 0, Math.PI * 2);
+	context.ellipse(mean.x*vmin, mean.y*vmin, 3, 3, 0, 0, Math.PI * 2);
     context.fill();
-    context.moveTo(mean.x, mean.y)
+    context.moveTo(mean.x*vmin, mean.y*vmin)
 	context.strokeStyle = `#aaa`;
 	context.lineWidth = 2;
     context.beginPath();
-    context.moveTo(mean.x, mean.y)
-    context.lineTo(mean.x+Math.sqrt(eigenVals[0])*(eigenVecs[0][0])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1]), mean.y+Math.sqrt(eigenVals[0])*(eigenVecs[0][1])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1]))
-    context.moveTo(mean.x, mean.y)
-    context.lineTo(mean.x+Math.sqrt(eigenVals[1])*(eigenVecs[1][0])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1]), mean.y+Math.sqrt(eigenVals[1])*(eigenVecs[1][1])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1]))
+    context.moveTo(mean.x*vmin, mean.y*vmin)
+    context.lineTo(vmin*(mean.x+Math.sqrt(eigenVals[0])*(eigenVecs[0][0])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])), vmin*(mean.y+Math.sqrt(eigenVals[0])*(eigenVecs[0][1])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])))
+    context.moveTo(vmin*mean.x, vmin*mean.y)
+
+    context.lineTo(vmin*(mean.x+Math.sqrt(eigenVals[1])*(eigenVecs[1][0])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])), vmin*(mean.y+Math.sqrt(eigenVals[1])*(eigenVecs[1][1])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])))
+
     context.stroke()
 
 
     context.font = 'italic 12pt sans-serif';
     context.fillText("λ₁", 
-    	mean.x+ 0.5 * Math.sqrt(eigenVals[0])*(eigenVecs[0][0])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])
-    	+ 18 * (eigenVecs[1][1])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
-    	, 
-    	mean.y+ 0.5 * Math.sqrt(eigenVals[0])*(eigenVecs[0][1])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])
-    	+ 18 * (eigenVecs[1][0])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
+    	vmin*(mean.x+ 0.5 * Math.sqrt(eigenVals[0])*(eigenVecs[0][0])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])
+    	    	+ 18 * (eigenVecs[1][1])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
+    	    	), 
+    	vmin*(mean.y+ 0.5 * Math.sqrt(eigenVals[0])*(eigenVecs[0][1])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])
+    	    	+ 18 * (eigenVecs[1][0])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1]))
     )
 
     context.fillText("λ₂", 
-    	mean.x+ 0.5 * Math.sqrt(eigenVals[1])*(eigenVecs[1][0])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
-    	+ 18 * (eigenVecs[0][1])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1]), 
-    	mean.y+ 0.5 * Math.sqrt(eigenVals[1])*(eigenVecs[1][1])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
-    	+ 18 * (eigenVecs[0][0])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])
+    	vmin*(mean.x+ 0.5 * Math.sqrt(eigenVals[1])*(eigenVecs[1][0])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
+    	    	+ 18 * (eigenVecs[0][1])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1])), 
+    	vmin*(mean.y+ 0.5 * Math.sqrt(eigenVals[1])*(eigenVecs[1][1])/Math.sqrt(eigenVecs[1][0]*eigenVecs[1][0] + eigenVecs[1][1]*eigenVecs[1][1])
+    	    	+ 18 * (eigenVecs[0][0])/Math.sqrt(eigenVecs[0][0]*eigenVecs[0][0] + eigenVecs[0][1]*eigenVecs[0][1]))
     )
 
 
@@ -161,31 +171,32 @@
 		context.strokeStyle = `#aaa`;
 		context.lineWidth = 2;
 	    context.beginPath();
-	    context.moveTo(mean.x - Math.sqrt(variance.x), coordPadding);
-	    context.lineTo(mean.x + Math.sqrt(variance.x), coordPadding);
-	    context.moveTo(coordPadding,mean.y - Math.sqrt(variance.y));
-	    context.lineTo(coordPadding,mean.y + Math.sqrt(variance.y));
+	    context.moveTo(vmin*(mean.x - Math.sqrt(variance.x)), coordPadding);
+	    context.lineTo(vmin*(mean.x + Math.sqrt(variance.x)), coordPadding);
+	    context.moveTo(coordPadding,vmin*(mean.y - Math.sqrt(variance.y)));
+	    context.lineTo(coordPadding,vmin*(mean.y + Math.sqrt(variance.y)));
 	    context.stroke()    
-	    context.moveTo(mean.x - Math.sqrt(variance.x), coordPadding);
-		context.ellipse(mean.x, coordPadding, 3, 3, 0, 0, Math.PI * 2);
-	    context.moveTo(coordPadding, mean.y - Math.sqrt(variance.y));
-		context.ellipse(coordPadding, mean.y, 3, 3, 0, 0, Math.PI * 2);
+	    context.moveTo(vmin*(mean.x - Math.sqrt(variance.x)), coordPadding);
+		context.ellipse(vmin*mean.x, coordPadding, 3, 3, 0, 0, Math.PI * 2);
+	    context.moveTo(coordPadding, vmin*(mean.y - Math.sqrt(variance.y)));
+		context.ellipse(coordPadding, vmin*mean.y, 3, 3, 0, 0, Math.PI * 2);
 	    context.fill();
 
 	    context.fillStyle = `#8c8`
 	    context.font = 'italic 12pt sans-serif';
-	    context.fillText('μX', mean.x, 35)
+	    context.fillText('μX', vmin*mean.x, 35)
 	    context.fillText('√σX', mean.x - 20 - Math.sqrt(variance.x), 20)
 	    context.fillStyle = `#c88`
-	    context.fillText('μY', 35, mean.y)
-	    context.fillText('√σY', 20, mean.y - 20 - Math.sqrt(variance.y))
+	    context.fillText('μY', 35, vmin*mean.y)
+	    context.fillText('√σY', 20, vmin*(mean.y - 20 - Math.sqrt(variance.y)))
 
     }
 
   };
 
   function addSample(evt) {
-  	samples = [...samples.slice(0, sampleLimit), {x: evt.pageX, y: evt.pageY}]
+  	const vmin = Math.min(window.innerWidth, window.innerHeight)
+  	samples = [...samples.slice(0, sampleLimit), {x: evt.pageX/vmin, y: evt.pageY/vmin}]
   	sampleLimit = samples.length
   }
 
@@ -194,8 +205,6 @@
   	sampleLimit = samples.length
 
   }
-
-  
 </script>
 
 <style>
@@ -238,8 +247,6 @@
 
 	:global(canvas) {
 		grid-area: all;
-		width: 100% !important;
-		height: 100% !important;
 	}
 
 	:global(body) {
@@ -288,10 +295,7 @@
 	  <Layer {render} />
 	</Canvas>
 
-  <Gauss onclick={addSample} class="gl" view={view3d} show={view3d != 'no'} mean={mean} variance={variance} correlation={correlation} remap={(x,y) => {
-    const vmin = Math.min(w,h)
-    return [vmin/2 + x*vmin*2, vmin/2 + y*vmin*2]
-  }} />
+  <Gauss onclick={addSample} class="gl" view={view3d} show={view3d != 'no'} mean={mean} variance={variance} correlation={correlation} samples={usedSamples.map(({x,y}) => [2*x,2*y])} />
 
 	<div class="intro" class:hidden={samples.length > 0}>
 		Click anywere to place some sample points.
@@ -322,26 +326,26 @@
 		<h2>Estimations</h2>
 		<dl>
 			<dt>Mean(X)</dt>
-			<dd>&mu;<sub>X</sub> = {formatter.format(mean.x)}</dd>
+			<dd>&mu;<sub>X</sub> = {formatter.format(vmin*mean.x)}</dd>
 			<dt>Mean(Y)</dt>
-			<dd>&mu;<sub>Y</sub> = {formatter.format(mean.y)}</dd>
+			<dd>&mu;<sub>Y</sub> = {formatter.format(vmin*mean.y)}</dd>
 			<dt>Variance(X)</dt>
-			<dd>&sigma;<sub>X</sub> = {formatter.format(variance.x)}</dd>
+			<dd>&sigma;<sub>X</sub> = {formatter.format(vmin*variance.x)}</dd>
 			<dt>Variance(Y)</dt>
-			<dd>&sigma;<sub>Y</sub> = {formatter.format(variance.y)}</dd>
+			<dd>&sigma;<sub>Y</sub> = {formatter.format(vmin*variance.y)}</dd>
 			<dt>Standard Deviation(X)</dt>
-			<dd>&Sqrt;&sigma;<sub>X</sub> = {formatter.format(Math.sqrt(variance.x))}</dd>
+			<dd>&Sqrt;&sigma;<sub>X</sub> = {formatter.format(vmin*Math.sqrt(variance.x))}</dd>
 			<dt>Standard Deviation(Y)</dt>
-			<dd>&Sqrt;&sigma;<sub>Y</sub> = {formatter.format(Math.sqrt(variance.y))}</dd>
+			<dd>&Sqrt;&sigma;<sub>Y</sub> = {formatter.format(vmin*Math.sqrt(variance.y))}</dd>
 			<dt>Covariance(X,Y)</dt>
-			<dd>K<sub>XY</sub> = K<sub>YX</sub> ={formatter.format(covariance)}</dd>
+			<dd>K<sub>XY</sub> = K<sub>YX</sub> ={formatter.format(vmin*covariance)}</dd>
 			<dt>Correlation(X,Y)</dt>
-			<dd>&rho;<sub>XY</sub> = {formatter.format(correlation)}</dd>
+			<dd>&rho;<sub>XY</sub> = {formatter.format(vmin*correlation)}</dd>
 			<dt>CovarianceMatrix(X,Y)</dt>
-			<dd><span style="white-space: nowrap;">&Sigma;<sub>XY</sub> = {formatter.format(crossCovariance[0])}; {formatter.format(crossCovariance[1])}</span><br><span style="white-space: nowrap;">{formatter.format(crossCovariance[2])}; {formatter.format(crossCovariance[3])}</span></dd>
+			<dd><span style="white-space: nowrap;">&Sigma;<sub>XY</sub> = {formatter.format(vmin*crossCovariance[0])}; {formatter.format(vmin*crossCovariance[1])}</span><br><span style="white-space: nowrap;">{formatter.format(vmin*crossCovariance[2])}; {formatter.format(vmin*crossCovariance[3])}</span></dd>
 			<dt>&Sigma;<sub>XY</sub> eigenvalues</dt>
-			<dd>&lambda;<sub>1</sub> = {formatter.format(eigenVals[0])}</dd>
-			<dd>&lambda;<sub>2</sub> = {formatter.format(eigenVals[1])}</dd>
+			<dd>&lambda;<sub>1</sub> = {formatter.format(vmin*eigenVals[0])}</dd>
+			<dd>&lambda;<sub>2</sub> = {formatter.format(vmin*eigenVals[1])}</dd>
 			<dt>&Sigma;<sub>XY</sub> eigenvectors</dt>
 			<dd style="white-space: nowrap;">v<sub>1</sub> = [{eigenVecs[0].map(formatter.format).join(';')}]</dd>
 			<dd style="white-space: nowrap;">v<sub>2</sub> = [{eigenVecs[1].map(formatter.format).join(';')}]</dd>

@@ -11,9 +11,7 @@
   export let mean;
   export let variance;
   export let correlation;
-  export let remap = function(x,y) {
-  	return [x,y]
-  }
+  export let samples = [];
 
   let gl;
   let disableClick = false
@@ -160,14 +158,14 @@
             const w = el.width/2
             const t = 0.01 * tick
             return [
-              makeMatrixTranslate(0,0,-24+8*state.zoom),
+              makeMatrixTranslate(0,0,-30+8*state.zoom),
               makeMatrixRotateX(-state.rotationX),
               makeMatrixRotateY(-state.rotationY),
               makeMatrixScale(8,8, 8),
             ].reduce(matrixMultiplyMatrix)
           },
           projection: ({viewportWidth, viewportHeight}) =>
-            makeMatrixPerspective(60, viewportWidth/viewportHeight, 0.01, 128),
+            makeMatrixPerspective(45, viewportWidth/viewportHeight, 0.01, 128),
 
           viewport: () => ({ x: 0, y: 0, width: el.width, height: el.height }),
         },
@@ -380,6 +378,241 @@
     return state
   }
 
+  function makeArrowShader(regl) {
+      var roundCapJoin = {
+        buffer: regl.buffer([
+          [0, -0.5, 0],
+          [0, -0.5, 1],
+          [0, 0.5, 1],
+          [0, -0.5, 0],
+          [0, 0.5, 1],
+          [0, 0.5, 0],
+
+          [8,0,1],
+          [0.5,3,1],
+          [2,0,1],
+
+          [8,0,1],
+          [2,0,1],
+          [0.5,-3,1],
+        ]),
+        count: 12
+      }
+
+      return regl({
+        vert: `
+          precision highp float;
+          attribute vec3 position;
+          attribute vec3 pointA, pointB;
+          uniform float width;
+          uniform vec2 resolution;
+          uniform mat4 model, view, projection;
+
+          void main() {
+            vec4 clip0 = projection * view * model * vec4(pointA, 1.0);
+            vec4 clip1 = projection * view * model * vec4(pointB, 1.0);
+            vec2 screen0 = resolution * (0.5 * clip0.xy/clip0.w + 0.5);
+            vec2 screen1 = resolution * (0.5 * clip1.xy/clip1.w + 0.5);
+            vec2 xBasis = normalize(screen1 - screen0);
+            vec2 yBasis = vec2(-xBasis.y, xBasis.x);
+            vec2 pt0 = screen0 + width * (position.x * xBasis + position.y * yBasis);
+            vec2 pt1 = screen1 + width * (position.x * xBasis + position.y * yBasis);
+            vec2 pt = mix(pt0, pt1, position.z);
+            vec4 clip = mix(clip0, clip1, position.z);
+            gl_Position = vec4(clip.w * (2.0 * pt/resolution - 1.0), clip.z, clip.w);
+          }`,
+
+        frag: `
+          precision highp float;
+          uniform vec4 color;
+          void main() {
+            gl_FragColor = color;
+          }`,
+
+        attributes: {
+          position: {
+            buffer: roundCapJoin.buffer,
+            divisor: 0
+          },
+          pointA: {
+            buffer: regl.prop("points"),
+            divisor: 1,
+            offset: Float32Array.BYTES_PER_ELEMENT * 0,
+            stride: Float32Array.BYTES_PER_ELEMENT * 6
+          },
+          pointB: {
+            buffer: regl.prop("points"),
+            divisor: 1,
+            offset: Float32Array.BYTES_PER_ELEMENT * 3,
+            stride: Float32Array.BYTES_PER_ELEMENT * 6
+          }
+        },
+
+        uniforms: {
+          width: regl.prop("width"),
+          color: regl.prop("color"),
+          model: regl.prop("model"),
+          resolution: regl.prop("resolution")
+        },
+
+        depth: {
+          enable: regl.prop("depth")
+        },
+
+        cull: {
+          enable: true,
+          face: "back"
+        },
+
+        blend: {
+          enable: true,
+          func: {
+            srcRGB: 'src alpha',
+            srcAlpha: 1,
+            dstRGB: 'one minus src alpha',
+            dstAlpha: 1
+          },
+          equation: {
+            rgb: 'add',
+            alpha: 'add'
+          },
+          color: [0, 0, 0, 0]
+        },
+
+        stencil: {
+          enable: (_, props) => props.stencilId >= 0,
+          func: {
+            cmp: 'equal',
+            ref: 0xff,
+            mask: (_, props) => 1 << props.stencilId,
+          },
+          op: {
+            fail: 'keep',
+            zfail: 'keep',
+            zpass: 'keep'
+          },
+        },
+
+        polygonOffset: {
+          enable: true,
+          offset: {
+            factor: 0,
+            units: 32
+          }
+        },
+
+
+        count: roundCapJoin.count,
+        instances: regl.prop("segments")
+      });
+    }
+
+    function makePointShader(regl) {
+      var roundCapJoin = {
+        buffer: regl.buffer([
+          [-1,-1],
+          [-1,1],
+          [1,1],
+          [-1,-1],
+          [1,1],
+          [1,-1],
+        ]),
+        count: 6
+      }
+
+      return regl({
+        vert: `
+          precision highp float;
+          attribute vec2 position;
+          attribute vec2 point;
+          uniform float width;
+          uniform vec2 resolution;
+          uniform mat4 model, view, projection;
+
+          void main() {
+            vec4 clip = projection * view * model * vec4(point.x, 0.0, point.y, 1.0);
+            gl_Position = vec4(clip.x + width*clip.w*position.x/resolution.x, clip.y + width*clip.w*position.y/resolution.y, clip.z, clip.w);
+          }`,
+
+        frag: `
+          precision highp float;
+          uniform vec4 color;
+          void main() {
+            gl_FragColor = color;
+          }`,
+
+        attributes: {
+          position: {
+            buffer: roundCapJoin.buffer,
+            divisor: 0
+          },
+          point: {
+            buffer: regl.prop("points"),
+            divisor: 1,
+            offset: Float32Array.BYTES_PER_ELEMENT * 0,
+            stride: Float32Array.BYTES_PER_ELEMENT * 2
+          },
+        },
+
+        uniforms: {
+          width: regl.prop("width"),
+          color: regl.prop("color"),
+          model: regl.prop("model"),
+          resolution: regl.prop("resolution")
+        },
+
+        depth: {
+          enable: regl.prop("depth")
+        },
+
+        cull: {
+          enable: false,
+          face: "back"
+        },
+
+        blend: {
+          enable: true,
+          func: {
+            srcRGB: 'src alpha',
+            srcAlpha: 1,
+            dstRGB: 'one minus src alpha',
+            dstAlpha: 1
+          },
+          equation: {
+            rgb: 'add',
+            alpha: 'add'
+          },
+          color: [0, 0, 0, 0]
+        },
+
+        stencil: {
+          enable: (_, props) => props.stencilId >= 0,
+          func: {
+            cmp: 'equal',
+            ref: 0xff,
+            mask: (_, props) => 1 << props.stencilId,
+          },
+          op: {
+            fail: 'keep',
+            zfail: 'keep',
+            zpass: 'keep'
+          },
+        },
+
+        polygonOffset: {
+          enable: true,
+          offset: {
+            factor: 0,
+            units: 32
+          }
+        },
+
+
+        count: roundCapJoin.count,
+        instances: regl.prop("segments")
+      });
+    }
+
   function makeColorGridShader(regl) {
   	const planeBuffer = regl.buffer([
       -1,0,-1,
@@ -414,12 +647,17 @@
       attribute vec4 weight;
       uniform mat4 projection, view, model;
       uniform float sidelength;
+      uniform float maxheight;
       varying vec3 vColor;
       void main() {
         float row = floor(instanceId/sidelength);
         float col = mod(instanceId, sidelength);
-        float height = dot(vec4(pointA, pointB, pointC, pointD), weight);
-        vColor = vec3(0.3-height*height/3.0,height/3.0,0.1+sqrt(height)/3.0);
+        float edge = float(col != sidelength - 1.0);
+        float height = dot(vec4(pointA, edge*pointB, edge*pointC, edge*pointD), weight);
+
+        
+
+        vColor = vec3(0.5*sqrt(height),(height/maxheight),0.3+0.5*height*height/maxheight/maxheight);
         gl_Position = projection * view * model * vec4(
         position/sidelength - vec3(1.0,0.0,1.0) + 
         vec3(2.0*row/sidelength,
@@ -463,6 +701,7 @@
       uniforms: {
       	sidelength: regl.prop("sidelength"),
         model: regl.prop("model"),
+        maxheight: regl.prop("maxheight"),
       },
       cull: {
         enable: false,
@@ -478,9 +717,11 @@
 
   const sidelength = 256
   let gridPoints
+  let pointBuffer
+  let sampleCount = 0
 
   onMount(() => {
-	gl.width = gl.clientWidth * window.devicePixelRatio
+	  gl.width = gl.clientWidth * window.devicePixelRatio
   	gl.height = gl.clientHeight * window.devicePixelRatio
    
     const re = createRegl({
@@ -490,9 +731,31 @@
 
     const camera = makeDragControl(re, gl)
     const drawGauss = makeColorGridShader(re)
+    const drawAxis = makeArrowShader(re)
+    const drawPoints = makePointShader(re)
 
-    const modelMatrix = makeMatrixScale(0.8,0.8,0.8)
+    const modelMatrix = makeMatrixScale(1,1,1)
+    const axisMatrix = matrixMultiplyMatrix(
+      makeMatrixScale(1.05,1.05,1.05),
+      makeMatrixTranslate(-1,0.01,-1)
+    )
 
+    const axisBuffer = re.buffer([
+      //x
+      0,0,0,
+      1,0,0,
+
+      //z
+      0,0,0,
+      0,0,1,
+
+      //y
+      0,0,0,
+      0,0.8,0,
+
+    ]);
+
+    pointBuffer = re.buffer();
 
     gridPoints = re.buffer(Array(sidelength*(sidelength+1)+1).fill(null).map((_,i)=>0))
 
@@ -508,27 +771,60 @@
 
 
   	  camera.setup(() => {
-  		 drawGauss({
-              points: gridPoints,
-              sidelength: sidelength,
-              model: modelMatrix,
-              instanceIds: Array(sidelength*sidelength).fill(null).map((_, i) => i),
-              instances: sidelength*sidelength,
-  		 })
+        drawGauss({
+          points: gridPoints,
+          sidelength: sidelength,
+          maxheight: maxheight,
+          model: modelMatrix,
+          instanceIds: Array(sidelength*sidelength).fill(null).map((_, i) => i),
+          instances: sidelength*sidelength,
+        })
+        drawAxis({
+            points: axisBuffer,
+            model: axisMatrix,
+            color: [0,0,0, 1],
+            width: 2 * window.devicePixelRatio,
+            segments: 3,
+            resolution: [gl.clientWidth,gl.clientHeight],
+            depth: false,
+          })
+
+        drawPoints({
+            points: pointBuffer,
+            model: axisMatrix,
+            color: [0.5,1,1, 1],
+            width: 4 * window.devicePixelRatio,
+            segments: sampleCount,
+            resolution: [gl.clientWidth,gl.clientHeight],
+            depth: false,
+          })
   	  })
   	})
+
+    return () => re.destroy()
   });
 
+  let maxheight = 1
+
+  $: if(samples && pointBuffer) {
+    pointBuffer(samples.flat(1))
+    sampleCount = samples.length
+  } else {
+    sampleCount = 0
+  }
+
   $: if(gridPoints && variance.x && variance.y && Math.abs(correlation) <0.9999) {
+
+
+
 		const A = 1/(2*Math.PI*Math.sqrt(variance.x*variance.y)*(Math.sqrt(1-correlation*correlation)||1))
 		const density = Array(sidelength*(sidelength+1)+1).fill(null).map((_,i)=> {
+	  		const [x,y] = [
+	  			Math.floor(i/sidelength)/sidelength, 
+	  			(i % sidelength)/sidelength
+	  		]
 
-	  		const [x,y] = remap(
-	  			Math.floor(i/sidelength)/sidelength - 0.5, 
-	  			(i % sidelength)/sidelength - 0.5
-	  		)
-
-	        return 32*128*256*A * Math.exp(
+	        return A * Math.exp(
 	        	-0.5/((1-correlation*correlation)||1) * (
 	        		Math.pow(x-mean.x, 2)/variance.x+
 	        		Math.pow(y-mean.y, 2)/variance.y-
@@ -537,6 +833,7 @@
 	    })
 
 		if(view == 'pdf') {
+      maxheight = Math.max(...density)
 			gridPoints(density) 
 		} else {
 		    const cumulation = Array((sidelength)*(sidelength+1)).fill(0)
@@ -563,6 +860,7 @@
 		        cumulation[i] *= max
 		    }
 
+      maxheight = 8
 			gridPoints(cumulation)
 		}
 
