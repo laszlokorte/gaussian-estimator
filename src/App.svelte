@@ -347,8 +347,8 @@
 			<dd>&lambda;<sub>1</sub> = {formatter.format(vmin*eigenVals[0])}</dd>
 			<dd>&lambda;<sub>2</sub> = {formatter.format(vmin*eigenVals[1])}</dd>
 			<dt>&Sigma;<sub>XY</sub> eigenvectors</dt>
-			<dd style="white-space: nowrap;">v<sub>1</sub> = [{eigenVecs[0].map(formatter.format).join(';')}]</dd>
-			<dd style="white-space: nowrap;">v<sub>2</sub> = [{eigenVecs[1].map(formatter.format).join(';')}]</dd>
+			<dd style="white-space: nowrap;">v<sub>1</sub> = [{eigenVecs[0].map(x=>x*vmin).map(formatter.format).join(';')}]</dd>
+			<dd style="white-space: nowrap;">v<sub>2</sub> = [{eigenVecs[1].map(x=>x*vmin).map(formatter.format).join(';')}]</dd>
 		</dl>
 		<h2>Calculation</h2>
 		<ul class="plainlist">
