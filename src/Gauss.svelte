@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, tick  } from "svelte";
   import createRegl from "regl";
  
   let className
@@ -284,7 +284,6 @@
       if(touches.length >= 2) {
         var rotation = touchRotation(touches)
         if(rotation && touchState.prevRotation !== null) {
-          rotate(pos, ((rotation - touchState.prevRotation + 360 + 180) % 360 - 180) / touches.length)
           touchState.prevRotation = rotation;
         } else if(rotation) {
           touchState.prevRotation = rotation;
@@ -624,24 +623,23 @@
     ])
 
     const weightBuffer = regl.buffer([
-       1,0,0,0,
-       0,1,0,0,
+       1,0,0,0,//
+       0,1,0,0,//
        0,0,0,1,
-       1,0,0,0,
+       1,0,0,0,//
        0,0,0,1,
        0,0,1,0,
     ])
 
     return regl({
       frag: `
-      precision mediump float;
+      precision highp float;
       varying vec3 vColor;
       void main () {
         gl_FragColor = vec4(vColor,1);
       }`,
       vert: `
       attribute float pointA, pointB, pointC, pointD;
-      precision mediump float;
       attribute float instanceId;
       attribute vec3 position;
       attribute vec4 weight;
@@ -650,10 +648,10 @@
       uniform float maxheight;
       varying vec3 vColor;
       void main() {
-        float row = floor(instanceId/sidelength);
-        float col = mod(instanceId, sidelength);
-        float edge = float(col != sidelength - 1.0);
-        float height = dot(vec4(pointA, edge*pointB, edge*pointC, edge*pointD), weight);
+        float row = ceil(instanceId/sidelength);
+        float col = ceil(mod(instanceId, sidelength));
+        float noedge = float(col < (sidelength - 1.0));
+        float height = noedge * dot(vec4(pointA,pointB, pointC, pointD), weight) + (1.0 - noedge) * (pointA * (weight.x+weight.y) + pointC * (weight.w+weight.z));
 
         
 
@@ -719,14 +717,93 @@
   let gridPoints
   let pointBuffer
   let sampleCount = 0
+  let maxheight = 1
 
-  onMount(() => {
+  function loadHeights(heights) {
+      maxheight = 1
+      for(let i=0;i<heights.length;i++) {
+        if(heights[i] > maxheight) {
+          maxheight = heights[i]
+        }
+      }
+      gridPoints(heights) 
+  }
+
+   
+    $:if(samples && pointBuffer) {
+      pointBuffer(samples.flat(1))
+      sampleCount = samples.length
+    } else {
+      sampleCount = 0
+    }
+
+    $:if(gridPoints && variance.x && variance.y && Math.abs(correlation) <0.9999) {
+
+      const A = 1/(2*Math.PI*Math.sqrt(variance.x*variance.y)*(Math.sqrt(1-correlation*correlation)||1))
+      const density = Array(sidelength*(sidelength+1)+1).fill(null).map((_,i)=> {
+          const [x,y] = [
+            Math.floor(i/sidelength)/sidelength, 
+            (i % sidelength)/sidelength
+          ]
+
+            return A * Math.exp(
+              -0.5/((1-correlation*correlation)||1) * (
+                Math.pow(x-mean.x, 2)/variance.x+
+                Math.pow(y-mean.y, 2)/variance.y-
+                2*correlation*(x-mean.x)*(y-mean.y)/Math.sqrt(variance.x*variance.y)
+              ))
+        })
+
+
+      if(view == 'pdf') {
+        loadHeights(density)
+      } else {
+          const cumulation = Array(sidelength*(sidelength+1)+1).fill(0)
+
+          cumulation[0] = density[0]
+          for (let i = 1; i <= sidelength; i++) {
+              cumulation[(0)*(sidelength)+(i)] = cumulation[(0)*(sidelength)+(i - 1)] + density[(0)*(sidelength)+(i)];
+          }
+          for (let i = 0; i <= sidelength; i++) {
+              cumulation[(i)*(sidelength)+(0)] = cumulation[(i - 1)*(sidelength)+(0)] + density[(i)*(sidelength)+(0)];
+          }
+       
+          for (let i = 1; i <= sidelength; i++)
+          {
+              for (let j = 2; j <= sidelength; j++) {
+                  cumulation[(i)*(sidelength)+(j)] = cumulation[(i - 1)*(sidelength)+(j)] + cumulation[(i)*(sidelength)+(j - 1)] - cumulation[(i - 1)*(sidelength)+(j - 1)] + density[(i)*(sidelength)+(j)] / 256;
+              }
+          }
+
+          const max  = 8/cumulation[cumulation.length - 2]
+          const l = cumulation.length
+          for (let i = 0; i <= l; i++)
+          {
+              cumulation[i] *= max
+          }
+        loadHeights(cumulation)
+      }
+
+    } else if(gridPoints) {
+      loadHeights(Array(sidelength*(sidelength+1)+1).fill(0))
+    }
+  
+
+  
+
+  onMount(async () => {
+    await tick()
+    window.onerror = function(msg) {
+      document.body.innerHTML = (msg)
+    }
+
+
 	  gl.width = gl.clientWidth * window.devicePixelRatio
   	gl.height = gl.clientHeight * window.devicePixelRatio
    
     const re = createRegl({
     	canvas: gl, 
-        extensions: ["ANGLE_instanced_arrays"]
+      extensions: ["ANGLE_instanced_arrays"]
     })
 
     const camera = makeDragControl(re, gl)
@@ -756,12 +833,13 @@
     ]);
 
     pointBuffer = re.buffer();
+    const instanceBuffer = re.buffer(Array(sidelength*sidelength).fill(null).map((_, i) => i));
 
     gridPoints = re.buffer(Array(sidelength*(sidelength+1)+1).fill(null).map((_,i)=>0))
 
   	re.frame(({time}) => {
-  	  re.poll()
-		gl.width = gl.clientWidth * window.devicePixelRatio
+
+		  gl.width = gl.clientWidth * window.devicePixelRatio
 	  	gl.height = gl.clientHeight * window.devicePixelRatio
   	  // clear contents of the drawing buffer
   	  re.clear({
@@ -776,7 +854,7 @@
           sidelength: sidelength,
           maxheight: maxheight,
           model: modelMatrix,
-          instanceIds: Array(sidelength*sidelength).fill(null).map((_, i) => i),
+          instanceIds: instanceBuffer,
           instances: sidelength*sidelength,
         })
         drawAxis({
@@ -785,7 +863,7 @@
             color: [0,0,0, 1],
             width: 2 * window.devicePixelRatio,
             segments: 3,
-            resolution: [gl.clientWidth,gl.clientHeight],
+            resolution: [gl.width,gl.height],
             depth: false,
           })
 
@@ -795,7 +873,7 @@
             color: [0.5,1,1, 1],
             width: 4 * window.devicePixelRatio,
             segments: sampleCount,
-            resolution: [gl.clientWidth,gl.clientHeight],
+            resolution: [gl.width,gl.height],
             depth: false,
           })
   	  })
@@ -803,70 +881,6 @@
 
     return () => re.destroy()
   });
-
-  let maxheight = 1
-
-  $: if(samples && pointBuffer) {
-    pointBuffer(samples.flat(1))
-    sampleCount = samples.length
-  } else {
-    sampleCount = 0
-  }
-
-  $: if(gridPoints && variance.x && variance.y && Math.abs(correlation) <0.9999) {
-
-
-
-		const A = 1/(2*Math.PI*Math.sqrt(variance.x*variance.y)*(Math.sqrt(1-correlation*correlation)||1))
-		const density = Array(sidelength*(sidelength+1)+1).fill(null).map((_,i)=> {
-	  		const [x,y] = [
-	  			Math.floor(i/sidelength)/sidelength, 
-	  			(i % sidelength)/sidelength
-	  		]
-
-	        return A * Math.exp(
-	        	-0.5/((1-correlation*correlation)||1) * (
-	        		Math.pow(x-mean.x, 2)/variance.x+
-	        		Math.pow(y-mean.y, 2)/variance.y-
-	        		2*correlation*(x-mean.x)*(y-mean.y)/Math.sqrt(variance.x*variance.y)
-	        	))
-	    })
-
-		if(view == 'pdf') {
-      maxheight = Math.max(...density)
-			gridPoints(density) 
-		} else {
-		    const cumulation = Array((sidelength)*(sidelength+1)).fill(0)
-
-		    cumulation[0] = density[0]
-		    for (let i = 1; i <= sidelength; i++) {
-	        	cumulation[(0)*(sidelength)+(i)] = cumulation[(0)*(sidelength)+(i - 1)] + density[(0)*(sidelength)+(i)];
-		    }
-		    for (let i = 0; i <= sidelength; i++) {
-		        cumulation[(i)*(sidelength)+(0)] = cumulation[(i - 1)*(sidelength)+(0)] + density[(i)*(sidelength)+(0)];
-		    }
-		 
-		    for (let i = 1; i <= sidelength; i++)
-		    {
-		        for (let j = 2; j <= sidelength; j++) {
-		            cumulation[(i)*(sidelength)+(j)] = cumulation[(i - 1)*(sidelength)+(j)] + cumulation[(i)*(sidelength)+(j - 1)] - cumulation[(i - 1)*(sidelength)+(j - 1)] + density[(i)*(sidelength)+(j)] / 256;
-		        }
-		    }
-
-		    const max  = 8/cumulation[cumulation.length - 2]
-		    const l = cumulation.length
-		    for (let i = 0; i <= l; i++)
-		    {
-		        cumulation[i] *= max
-		    }
-
-      maxheight = 8
-			gridPoints(cumulation)
-		}
-
-  } else if(gridPoints) {
-  	gridPoints(Array(sidelength*(sidelength+1)+1).fill(0))
-  }
 </script>
 
 <style>
