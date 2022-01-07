@@ -7,7 +7,7 @@
 
   export let show;
   export let view;
-  export let onclick = null;
+  export let addSample = null;
   export let mean;
   export let variance;
   export let correlation;
@@ -15,12 +15,6 @@
 
   let gl;
   let disableClick = false
-
-  let clickHandler = function(evt) {
-  	if(!disableClick) {
-  		onclick(evt)
-  	}
-  }
 
   function vectorMultiplyMatrix([x,y,z,w], matrix) {
         return [
@@ -156,16 +150,17 @@
         context: {
           view: ({tick}) => {
             const w = el.width/2
+            const h = el.height/2
             const t = 0.01 * tick
             return [
-              makeMatrixTranslate(0,0,-30+8*state.zoom),
+              makeMatrixTranslate(0,-0.1,-30+8*state.zoom),
               makeMatrixRotateX(-state.rotationX),
               makeMatrixRotateY(-state.rotationY),
               makeMatrixScale(8,8, 8),
             ].reduce(matrixMultiplyMatrix)
           },
           projection: ({viewportWidth, viewportHeight}) =>
-            makeMatrixPerspective(45, viewportWidth/viewportHeight, 0.01, 128),
+            makeMatrixPerspective(55, viewportWidth/viewportHeight, 0.01, 128),
 
           viewport: () => ({ x: 0, y: 0, width: el.width, height: el.height }),
         },
@@ -192,7 +187,6 @@
 
     el.addEventListener('mousedown', function(evt) {
       evt.preventDefault()
-      disableClick = false
       state.isDragging = true
     })
 
@@ -204,7 +198,6 @@
 
     el.ownerDocument.addEventListener('mousemove', function(evt) {
       if(state.isDragging) {
-        disableClick = true
         pan(evt.movementX, evt.movementY)
       }
     })
@@ -656,7 +649,7 @@
         
 
         vColor = vec3(0.5*sqrt(height),(height/maxheight),0.3+0.5*height*height/maxheight/maxheight);
-        gl_Position = projection * view * model * vec4(
+        gl_Position = float(col > 1.0) * projection * view * model * vec4(
         position/sidelength - vec3(1.0,0.0,1.0) + 
         vec3(2.0*row/sidelength,
         20.0 * height / sidelength,
@@ -758,29 +751,30 @@
       if(view == 'pdf') {
         loadHeights(density)
       } else {
-          const cumulation = Array(sidelength*(sidelength+1)+1).fill(0)
+        const cumulation = Array(sidelength*(sidelength+1)+1).fill(0)
 
-          cumulation[0] = density[0]
-          for (let i = 1; i <= sidelength; i++) {
-              cumulation[(0)*(sidelength)+(i)] = cumulation[(0)*(sidelength)+(i - 1)] + density[(0)*(sidelength)+(i)];
-          }
-          for (let i = 0; i <= sidelength; i++) {
-              cumulation[(i)*(sidelength)+(0)] = cumulation[(i - 1)*(sidelength)+(0)] + density[(i)*(sidelength)+(0)];
-          }
-       
-          for (let i = 1; i <= sidelength; i++)
-          {
-              for (let j = 2; j <= sidelength; j++) {
-                  cumulation[(i)*(sidelength)+(j)] = cumulation[(i - 1)*(sidelength)+(j)] + cumulation[(i)*(sidelength)+(j - 1)] - cumulation[(i - 1)*(sidelength)+(j - 1)] + density[(i)*(sidelength)+(j)] / 256;
-              }
-          }
+        cumulation[0] = density[0]
 
-          const max  = 8/cumulation[cumulation.length - 2]
-          const l = cumulation.length
-          for (let i = 0; i <= l; i++)
-          {
-              cumulation[i] *= max
-          }
+        for (let i = 1; i <= sidelength; i++) {
+            cumulation[(0)*(sidelength)+(i)] = cumulation[(0)*(sidelength)+(i - 1)] + density[(0)*(sidelength)+(i)];
+        }
+        for (let i = 1; i <= sidelength; i++) {
+            cumulation[(i)*(sidelength)+(0)] = cumulation[(i - 1)*(sidelength)+(0)] + density[(i)*(sidelength)+(0)];
+        }
+     
+        for (let i = 1; i <= sidelength; i++)
+        {
+            for (let j = 2; j <= sidelength; j++) {
+                cumulation[(i)*(sidelength)+(j)] = cumulation[(i - 1)*(sidelength)+(j)] + cumulation[(i)*(sidelength)+(j - 1)] - cumulation[(i - 1)*(sidelength)+(j - 1)] + density[(i)*(sidelength)+(j)] / 256;
+            }
+        }
+
+        const max  = 8/cumulation[cumulation.length - 2]
+        const l = cumulation.length
+        for (let i = 0; i <= l; i++)
+        {
+            cumulation[i] *= max
+        }
         loadHeights(cumulation)
       }
 
@@ -889,4 +883,4 @@
 	}
 </style>
 
-<canvas on:click={clickHandler} class:hide={!show} bind:this={gl} class="{className}"></canvas>
+<canvas class:hide={!show} bind:this={gl} class="{className}"></canvas>

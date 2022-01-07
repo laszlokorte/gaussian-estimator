@@ -4,7 +4,7 @@
 
   let w, h;
   let samples = []
-  let view3d = 'pdf'
+  let view3d = 'no'
 
   let sampleLimit = 0
 
@@ -59,7 +59,7 @@
   $: theta = eigenAngle(Math.max(...eigenVals), crossCovariance)
 
   $: render = ({ context, width, height }) => {
-  	const vmin = Math.min(width, height)
+  	const vmin = Math.min(window.innerWidth, window.innerHeight)
   	context.beginPath()
   	context.lineWidth = 1;
   	context.strokeStyle = 'black'
@@ -211,11 +211,13 @@
 	.container {
 		display: grid;
 		grid-template-columns: [all-start intro-start gl-start] minmax(min-content,1fr) minmax(min-content,1fr) minmax(min-content,2fr) [gl-end intro-end right-start] minmax(min-content,2fr) [right-end all-end];
-		grid-template-rows: [all-start right-start] 1fr [intro-start] 1fr [intro-end gl-start] 1fr  [ gl-end all-end right-end];
+		grid-template-rows: [all-start right-start gl-start intro-start] 1fr 1fr 1fr  [intro-end gl-end all-end right-end];
 		gap:  1em;
 		box-sizing: border-box;
 		height: 100%;
+		justify-items: stretch;
 	}
+
 
 	:global(body, html, #root) {
 		height: 100%;
@@ -223,30 +225,49 @@
 
 	.intro {
 		grid-area: intro;
-		align-self: center;
-		justify-self: center;
+		align-self: stretch;
+		justify-self: stretch;
 		pointer-events: none;
 		font-style: italic;
+		color: #888;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
-	.intro.hidden {
-		display: none;
+	.scalebase {
+		grid-area: intro;
+		pointer-events: none;	
+		align-self: stretch;
+		justify-self: stretch;
 	}
 
 	.menu {
 		grid-area: right;
 		overflow: hidden;
-		padding: 1em 2em 1em 1em;
-		background-color: #fffa;
 		overflow-y:  auto;
 		max-height: 100%;
 		max-width: 100%;
-		height: 100%;
 		box-sizing: border-box;
+	}
+
+	.menu-inner {
+		background-color: #fffa;
+		pointer-events: all;
+		padding: 1em 2em 1em 1em;
 	}
 
 	:global(canvas) {
 		grid-area: all;
+		width: 100%;
+		height: 100%;
+		max-width: 100%;
+	}
+
+	:global(.gl) {
+		grid-area: gl;
+		width: 100%;
+		height: 100%;
 	}
 
 	:global(body) {
@@ -277,97 +298,114 @@
 		padding: 0;
 	}
 
-	:global(.gl) {
-		grid-area: gl;
-		width: 100%;
-		height: 100%;
-	}
-
   input {
     margin: 0;
   }
+
+  .hidden {
+  	display: none;
+  }
+
+
+	@media(max-width: 60em) {
+		.container {
+			grid-template-columns: [all-start intro-start gl-start right-start] 1fr [right-end all-end gl-end intro-end];
+			grid-template-rows: [all-start gl-start intro-start] 60vmin [intro-end gl-end all-end right-start] auto  [right-end];
+			height: unset;
+			gap:  0;
+			max-height: unset;
+			align-items: stretch;
+		}
+
+		.menu {
+			height: unset;
+		}
+	}
 </style>
 
-<svelte:window bind:innerWidth={w} bind:innerHeight={h} />
-
 <div class="container">
-	<Canvas width={w} height={h} on:click={addSample}>
+	<Canvas style={`display: ${view3d != 'no' ? 'none':'block'}`} width={w} height={h} on:click={addSample}>
 	  <Layer {render} />
 	</Canvas>
 
-  <Gauss onclick={addSample} class="gl" view={view3d} show={view3d != 'no'} mean={mean} variance={variance} correlation={correlation} samples={usedSamples.map(({x,y}) => [2*x,2*y])} />
+  <Gauss addSample={addSample} class="gl" view={view3d} show={view3d != 'no'} mean={mean} variance={variance} correlation={correlation} samples={usedSamples.map(({x,y}) => [2*x,2*y])} />
 
-	<div class="intro" class:hidden={samples.length > 0}>
+	<div bind:clientWidth={w} bind:clientHeight={h} class="intro" class:hidden={samples.length > 0}>
 		Click anywere to place some sample points.
 	</div>
 
+	<div bind:clientWidth={w} bind:clientHeight={h} class="scalebase">
+	</div>
+
 	<div class="menu">
-		<h1>Gaussian Estimator</h1>
-		<p>
-			Click anywhere to place points/samples.
-		</p>
-		<p>
-			Parameters of a Gaussian distribution will be estimated. 
-		</p>
-		<dl>
-			<dt>Number of samples</dt>
-			<dd>{sampleLimit}/{samples.length}</dd>
-		</dl>
-    <dl>
-      <dt><label for="history">History</label></dt>
-      <dd><input disabled={samples.length < 1} id="history" type="range" min="0" max={samples.length} bind:value={sampleLimit}></dd>
-      <dt>3D</dt>
-      <dd style="display: flex; gap: 1em">
-        <label><input type="radio" bind:group={view3d} name="3d" value="no"> None</label>
-        <label><input type="radio" bind:group={view3d} name="3d" value="pdf"> PDF</label>
-        <label><input type="radio" bind:group={view3d} name="3d" value="cdf"> CDF</label>
-      </dd>
-    </dl>
-		<h2>Estimations</h2>
-		<dl>
-			<dt>Mean(X)</dt>
-			<dd>&mu;<sub>X</sub> = {formatter.format(vmin*mean.x)}</dd>
-			<dt>Mean(Y)</dt>
-			<dd>&mu;<sub>Y</sub> = {formatter.format(vmin*mean.y)}</dd>
-			<dt>Variance(X)</dt>
-			<dd>&sigma;<sub>X</sub> = {formatter.format(vmin*variance.x)}</dd>
-			<dt>Variance(Y)</dt>
-			<dd>&sigma;<sub>Y</sub> = {formatter.format(vmin*variance.y)}</dd>
-			<dt>Standard Deviation(X)</dt>
-			<dd>&Sqrt;&sigma;<sub>X</sub> = {formatter.format(vmin*Math.sqrt(variance.x))}</dd>
-			<dt>Standard Deviation(Y)</dt>
-			<dd>&Sqrt;&sigma;<sub>Y</sub> = {formatter.format(vmin*Math.sqrt(variance.y))}</dd>
-			<dt>Covariance(X,Y)</dt>
-			<dd>K<sub>XY</sub> = K<sub>YX</sub> ={formatter.format(vmin*covariance)}</dd>
-			<dt>Correlation(X,Y)</dt>
-			<dd>&rho;<sub>XY</sub> = {formatter.format(vmin*correlation)}</dd>
-			<dt>CovarianceMatrix(X,Y)</dt>
-			<dd><span style="white-space: nowrap;">&Sigma;<sub>XY</sub> = {formatter.format(vmin*crossCovariance[0])}; {formatter.format(vmin*crossCovariance[1])}</span><br><span style="white-space: nowrap;">{formatter.format(vmin*crossCovariance[2])}; {formatter.format(vmin*crossCovariance[3])}</span></dd>
-			<dt>&Sigma;<sub>XY</sub> eigenvalues</dt>
-			<dd>&lambda;<sub>1</sub> = {formatter.format(vmin*eigenVals[0])}</dd>
-			<dd>&lambda;<sub>2</sub> = {formatter.format(vmin*eigenVals[1])}</dd>
-			<dt>&Sigma;<sub>XY</sub> eigenvectors</dt>
-			<dd style="white-space: nowrap;">v<sub>1</sub> = [{eigenVecs[0].map(x=>x*vmin).map(formatter.format).join(';')}]</dd>
-			<dd style="white-space: nowrap;">v<sub>2</sub> = [{eigenVecs[1].map(x=>x*vmin).map(formatter.format).join(';')}]</dd>
-		</dl>
-		<h2>Calculation</h2>
-		<ul class="plainlist">
-			<li><code>&mu;<sub>X</sub> = sum(X)/(length(X))</code></li>
+		<div class="menu-inner">
+			<h1>Gaussian Estimator</h1>
+			<p>
+				Click anywhere to place points/samples.
+			</p>
+			<p>
+				Parameters of a Gaussian distribution will be estimated. 
+			</p>
+			<dl>
+				<dt>Number of samples</dt>
+				<dd>{sampleLimit}/{samples.length}</dd>
+			</dl>
+	    <dl on:click={(evt) => evt.stopPropagation()}>
+	      <dt><label for="history">History</label></dt>
+	      <dd><input disabled={samples.length < 1} id="history" type="range" min="0" max={samples.length} bind:value={sampleLimit}></dd>
+	      <dt>3D</dt>
+	      <dd style="display: flex; gap: 1em">
+	        <label><input type="radio" bind:group={view3d} name="3d" value="no"> None</label>
+	        <label><input type="radio" bind:group={view3d} name="3d" value="pdf"> PDF</label>
+	        <label><input type="radio" bind:group={view3d} name="3d" value="cdf"> CDF</label>
+	      </dd>
+	    </dl>
+			<h2>Estimations</h2>
+			<dl>
+				<dt>Mean(X)</dt>
+				<dd>&mu;<sub>X</sub> = {formatter.format(vmin*mean.x)}</dd>
+				<dt>Mean(Y)</dt>
+				<dd>&mu;<sub>Y</sub> = {formatter.format(vmin*mean.y)}</dd>
+				<dt>Variance(X)</dt>
+				<dd>&sigma;<sub>X</sub> = {formatter.format(vmin*variance.x)}</dd>
+				<dt>Variance(Y)</dt>
+				<dd>&sigma;<sub>Y</sub> = {formatter.format(vmin*variance.y)}</dd>
+				<dt>Standard Deviation(X)</dt>
+				<dd>&Sqrt;&sigma;<sub>X</sub> = {formatter.format(vmin*Math.sqrt(variance.x))}</dd>
+				<dt>Standard Deviation(Y)</dt>
+				<dd>&Sqrt;&sigma;<sub>Y</sub> = {formatter.format(vmin*Math.sqrt(variance.y))}</dd>
+				<dt>Covariance(X,Y)</dt>
+				<dd>K<sub>XY</sub> = K<sub>YX</sub> ={formatter.format(vmin*covariance)}</dd>
+				<dt>Correlation(X,Y)</dt>
+				<dd>&rho;<sub>XY</sub> = {formatter.format(vmin*correlation)}</dd>
+				<dt>CovarianceMatrix(X,Y)</dt>
+				<dd><span style="white-space: nowrap;">&Sigma;<sub>XY</sub> = {formatter.format(vmin*crossCovariance[0])}; {formatter.format(vmin*crossCovariance[1])}</span><br><span style="white-space: nowrap;">{formatter.format(vmin*crossCovariance[2])}; {formatter.format(vmin*crossCovariance[3])}</span></dd>
+				<dt>&Sigma;<sub>XY</sub> eigenvalues</dt>
+				<dd>&lambda;<sub>1</sub> = {formatter.format(vmin*eigenVals[0])}</dd>
+				<dd>&lambda;<sub>2</sub> = {formatter.format(vmin*eigenVals[1])}</dd>
+				<dt>&Sigma;<sub>XY</sub> eigenvectors</dt>
+				<dd style="white-space: nowrap;">v<sub>1</sub> = [{eigenVecs[0].map(x=>x*vmin).map(formatter.format).join(';')}]</dd>
+				<dd style="white-space: nowrap;">v<sub>2</sub> = [{eigenVecs[1].map(x=>x*vmin).map(formatter.format).join(';')}]</dd>
+			</dl>
+			<h2>Calculation</h2>
+			<ul class="plainlist">
+				<li><code>&mu;<sub>X</sub> = sum(X)/length(X)</code></li>
 
-			<li><code>&mu;<sub>Y</sub> = sum(Y)/(length(Y))</code></li>
+				<li><code>&mu;<sub>Y</sub> = sum(Y)/length(Y)</code></li>
 
-			<li><code>&sigma;<sub>X</sub> = sum(X - &mu;<sub>X</sub>)/(length(X) - 1)</code></li>
+				<li><code>&sigma;<sub>X</sub> = sum(X - &mu;<sub>X</sub>)/(length(X) - 1)</code></li>
 
-			<li><code>&sigma;<sub>Y</sub> = sum(Y - &mu;<sub>Y</sub>)/(length(Y) - 1)</code></li>
+				<li><code>&sigma;<sub>Y</sub> = sum(Y - &mu;<sub>Y</sub>)/(length(Y) - 1)</code></li>
 
-			<li><code>K<sub>XY</sub> = <code>K<sub>YX</sub> = sum((X-&mu;<sub>X</sub>)&middot;(Y-&mu;<sub>Y</sub>))/(length(X)-1)</code></li>
+				<li><code>K<sub>XY</sub> = <code>K<sub>YX</sub> = sum((X-&mu;<sub>X</sub>)&middot;(Y-&mu;<sub>Y</sub>))/(length(X)-1)</code></li>
 
-			<li><code>&rho;<sub>XY</sub> = K<sub>XY</sub> / sqrt(&sigma;<sub>X</sub>&middot;&sigma;<sub>Y</sub>)</code></li>
+				<li><code>&rho;<sub>XY</sub> = K<sub>XY</sub> / sqrt(&sigma;<sub>X</sub>&middot;&sigma;<sub>Y</sub>)</code></li>
 
-			<li><code>&Sigma;<sub>XY</sub> = [&sigma;<sub>X</sub>, K<sub>XY</sub>, &sigma;<sub>Y</sub>, K<sub>YX</sub>]</code></li>
+				<li><code>&Sigma;<sub>XY</sub> = [&sigma;<sub>X</sub>, K<sub>XY</sub>, &sigma;<sub>Y</sub>, K<sub>YX</sub>]</code></li>
 
-			<li><code>&lambda;<sub>1,2</sub> = (&sigma;<sub>X</sub>+&sigma;<sub>Y</sub>)/2 &plusmn; sqrt((&sigma;<sub>X</sub>+&sigma;<sub>Y</sub>)<sup>2</sup>/4 - (&sigma;<sub>X</sub>&middot;&sigma;<sub>Y</sub>-K<sub>XY</sub>&middot;K<sub>YX</sub>))</code></li>
+				<li><code>&lambda;<sub>1,2</sub> = (&sigma;<sub>X</sub>+&sigma;<sub>Y</sub>)/2 &plusmn; sqrt((&sigma;<sub>X</sub>+&sigma;<sub>Y</sub>)<sup>2</sup>/4 - (&sigma;<sub>X</sub>&middot;&sigma;<sub>Y</sub>-K<sub>XY</sub>&middot;K<sub>YX</sub>))</code></li>
 
-		</ul>
+			</ul>
+		</div>
 	</div>
 </div>
