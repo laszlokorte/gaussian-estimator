@@ -247,11 +247,7 @@
 
       const ray = [worldX/wLength,worldY/wLength,worldZ/wLength]
 
-      const cam = vectorMultiplyMatrix([0,0.1,5-1.5*state.zoom, 0], [
-        makeMatrixRotateX(-state.rotationX),
-        makeMatrixRotateY(-state.rotationY),
-      ].reduce(matrixMultiplyMatrix))
-
+      const cam = vectorMultiplyMatrix([0,0,0,1], invView)
 
       if(ray[1] < 0) {      
         const t = cam[1]/ray[1];
@@ -976,7 +972,7 @@
         drawPoints({
             points: pointBuffer,
             model: modelMatrix,
-            color: [0.5,1,1, 1],
+            color: [0.5,0.5,1, 1],
             width: 4 * window.devicePixelRatio,
             segments: sampleCount,
             resolution: [gl.width,gl.height],

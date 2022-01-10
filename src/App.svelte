@@ -10,8 +10,6 @@
 
   $: vmin = Math.min(w,h)
 
-  $: console.log(vmin)
-
   const formatter = new Intl.NumberFormat(navigator.locale, { maximumFractionDigits: 2, minimumFractionDigits: 2,signDisplay: 'always' })
 
   $: usedSamples = samples.slice(0, sampleLimit)
