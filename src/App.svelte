@@ -2,13 +2,15 @@
   import Gauss from "./Gauss.svelte";
   import { Canvas, Layer, t } from "svelte-canvas";
 
-  let w, h;
+  let w = 0, h = 0;
   let samples = []
   let view3d = 'pdf'
 
   let sampleLimit = 0
 
   $: vmin = Math.min(w,h)
+
+  $: console.log(vmin)
 
   const formatter = new Intl.NumberFormat(navigator.locale, { maximumFractionDigits: 2, minimumFractionDigits: 2,signDisplay: 'always' })
 
@@ -59,7 +61,6 @@
   $: theta = eigenAngle(Math.max(...eigenVals), crossCovariance)
 
   $: render = ({ context, width, height }) => {
-  	const vmin = Math.min(window.innerWidth, window.innerHeight)
   	context.beginPath()
   	context.lineWidth = 1;
   	context.strokeStyle = 'black'
@@ -195,7 +196,6 @@
   };
 
   function onClick(evt) {
-  	const vmin = Math.min(window.innerWidth, window.innerHeight)
   	addSample(evt.pageX/vmin, evt.pageY/vmin)
   }
 
