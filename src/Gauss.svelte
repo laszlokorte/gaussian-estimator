@@ -61,7 +61,58 @@
         ]
       }
 
-  function deg2rad(deg) {
+      function matrixInverse([
+        m00, m10, m20, m30,
+        m01, m11, m21, m31,
+        m02, m12, m22, m32,
+        m03, m13, m23, m33,
+      ]) {
+        const A2323 = m22 * m33 - m23 * m32
+        const A1323 = m21 * m33 - m23 * m31
+        const A1223 = m21 * m32 - m22 * m31
+        const A0323 = m20 * m33 - m23 * m30
+        const A0223 = m20 * m32 - m22 * m30
+        const A0123 = m20 * m31 - m21 * m30
+        const A2313 = m12 * m33 - m13 * m32
+        const A1313 = m11 * m33 - m13 * m31
+        const A1213 = m11 * m32 - m12 * m31
+        const A2312 = m12 * m23 - m13 * m22
+        const A1312 = m11 * m23 - m13 * m21
+        const A1212 = m11 * m22 - m12 * m21
+        const A0313 = m10 * m33 - m13 * m30
+        const A0213 = m10 * m32 - m12 * m30
+        const A0312 = m10 * m23 - m13 * m20
+        const A0212 = m10 * m22 - m12 * m20
+        const A0113 = m10 * m31 - m11 * m30
+        const A0112 = m10 * m21 - m11 * m20
+
+        let det = m00 * ( m11 * A2323 - m12 * A1323 + m13 * A1223 ) 
+            - m01 * ( m10 * A2323 - m12 * A0323 + m13 * A0223 ) 
+            + m02 * ( m10 * A1323 - m11 * A0323 + m13 * A0123 ) 
+            - m03 * ( m10 * A1223 - m11 * A0223 + m12 * A0123 )
+        det = 1 / det;
+
+        return [
+           det *   ( m11 * A2323 - m12 * A1323 + m13 * A1223 ),
+           det * - ( m01 * A2323 - m02 * A1323 + m03 * A1223 ),
+           det *   ( m01 * A2313 - m02 * A1313 + m03 * A1213 ),
+           det * - ( m01 * A2312 - m02 * A1312 + m03 * A1212 ),
+           det * - ( m10 * A2323 - m12 * A0323 + m13 * A0223 ),
+           det *   ( m00 * A2323 - m02 * A0323 + m03 * A0223 ),
+           det * - ( m00 * A2313 - m02 * A0313 + m03 * A0213 ),
+           det *   ( m00 * A2312 - m02 * A0312 + m03 * A0212 ),
+           det *   ( m10 * A1323 - m11 * A0323 + m13 * A0123 ),
+           det * - ( m00 * A1323 - m01 * A0323 + m03 * A0123 ),
+           det *   ( m00 * A1313 - m01 * A0313 + m03 * A0113 ),
+           det * - ( m00 * A1312 - m01 * A0312 + m03 * A0112 ),
+           det * - ( m10 * A1223 - m11 * A0223 + m12 * A0123 ),
+           det *   ( m00 * A1223 - m01 * A0223 + m02 * A0123 ),
+           det * - ( m00 * A1213 - m01 * A0213 + m02 * A0113 ),
+           det *   ( m00 * A1212 - m01 * A0212 + m02 * A0112 ),
+        ]
+      }
+
+    function deg2rad(deg) {
         return deg/180 * Math.PI
       }
 
@@ -153,10 +204,9 @@
             const h = el.height/2
             const t = 0.01 * tick
             return [
-              makeMatrixTranslate(0,-0.1,-30+8*state.zoom),
+              makeMatrixTranslate(0,-0.1,-5+1.5*state.zoom),
               makeMatrixRotateX(-state.rotationX),
               makeMatrixRotateY(-state.rotationY),
-              makeMatrixScale(8,8, 8),
             ].reduce(matrixMultiplyMatrix)
           },
           projection: ({viewportWidth, viewportHeight}) =>
@@ -173,6 +223,47 @@
       }),
     }
 
+    function screenToFloor(x,y) {
+      const projectionMatrix = makeMatrixPerspective(55, el.width/el.height, 0.01, 128);
+
+      const viewMatrix = [
+        makeMatrixTranslate(0,-0.1,-5+1.5*state.zoom),
+        makeMatrixRotateX(-state.rotationX),
+        makeMatrixRotateY(-state.rotationY),
+      ].reduce(matrixMultiplyMatrix)
+
+      const invProj = matrixInverse(projectionMatrix)
+      const invView = matrixInverse(viewMatrix)
+
+      const deviceX = ((x - el.offsetTop) / el.offsetWidth) * 2 - 1;
+      const deviceY = -(((y - el.offsetLeft) / el.offsetHeight) * 2 - 1);
+
+      const clip = [deviceX, deviceY, -1,1]
+
+      const [eyeX, eyeY, eyeZ, eyeW] = vectorMultiplyMatrix(clip, invProj);
+      const [worldX, worldY, worldZ] = vectorMultiplyMatrix([eyeX, eyeY, -1, 0], invView);
+      
+      const wLength = Math.sqrt(worldX*worldX + worldY*worldY + worldZ*worldZ)
+
+      const ray = [worldX/wLength,worldY/wLength,worldZ/wLength]
+
+      const cam = vectorMultiplyMatrix([0,0.1,5-1.5*state.zoom, 0], [
+        makeMatrixRotateX(-state.rotationX),
+        makeMatrixRotateY(-state.rotationY),
+      ].reduce(matrixMultiplyMatrix))
+
+
+      if(ray[1] < 0) {      
+        const t = cam[1]/ray[1];
+        const x = 0.5+0.5*(cam[0] - t*ray[0])
+        const y = 0.5+0.5*(cam[2] - t*ray[2])
+        
+        return [x,y]
+      }
+
+      return null
+    }
+
     function pan(dx, dy) {
       state.rotationX += 0.01 * dy * window.devicePixelRatio
       state.rotationY += 0.01 * dx * window.devicePixelRatio
@@ -187,18 +278,30 @@
 
     el.addEventListener('mousedown', function(evt) {
       evt.preventDefault()
+      
+
       state.isDragging = true
+      noclick = false
     })
 
+    let noclick = false
     el.addEventListener('click', function(evt) {
+      if(noclick) {
+        return
+      }
       evt.preventDefault()
       evt.stopPropagation()
+      const s = screenToFloor(evt.pageX, evt.pageY)
+      if(s && addSample) {
+        addSample(s[0], s[1])
+      }
     }, true)
 
 
     el.ownerDocument.addEventListener('mousemove', function(evt) {
       if(state.isDragging) {
         pan(evt.movementX, evt.movementY)
+        noclick = true
       }
     })
 
@@ -247,6 +350,9 @@
       if(evt.touches.length >= 1) {
         event.preventDefault()
       }
+      if(evt.touches.length < 2) {
+        noclick = false
+      }
     });
 
     el.ownerDocument.addEventListener('touchmove', function touchMove(evt) {
@@ -258,6 +364,7 @@
       var preventDefault = false;
 
       if(touchState.panBase) {
+        noclick = true
         var pos = touchCenter(touches)
         pan((pos.x - touchState.panBase.x)/3, (pos.y - touchState.panBase.y)/3)
         touchState.panBase.x = pos.x
@@ -266,6 +373,7 @@
       }
 
       if(touchState.prevDistance) {
+        noclick = true
         var touches = filterTouches(touchState.touchIds, evt.touches)
         var distance = touchRadius(touches);
 
@@ -293,6 +401,14 @@
       if(touchState.touchIds.length === 0) {
         return
       }
+
+      if(!noclick) {
+        const s = screenToFloor(touchState.panBase.x, touchState.panBase.y)
+        if(s && addSample) {
+          addSample(s[0], s[1])
+        }
+      }
+
       var oldIds = Array.prototype.map.call(evt.changedTouches, function(t) {
         return t.identifier;
       })
@@ -646,11 +762,9 @@
         float noedge = float(col < (sidelength - 1.0));
         float height = noedge * dot(vec4(pointA,pointB, pointC, pointD), weight) + (1.0 - noedge) * (pointA * (weight.x+weight.y) + pointC * (weight.w+weight.z));
 
-        
-
         vColor = vec3(0.5*sqrt(height),(height/maxheight),0.3+0.5*height*height/maxheight/maxheight);
-        gl_Position = float(col > 1.0) * projection * view * model * vec4(
-        position/sidelength - vec3(1.0,0.0,1.0) + 
+        gl_Position = float(col > 1.0 && row > 1.0) * projection * view * model * vec4(
+        position/sidelength + 
         vec3(2.0*row/sidelength,
         20.0 * height / sidelength,
         2.0*col/sidelength), 1);
@@ -729,6 +843,7 @@
     } else {
       sampleCount = 0
     }
+  
 
     $:if(gridPoints && variance.x && variance.y && Math.abs(correlation) <0.9999) {
 
@@ -805,11 +920,8 @@
     const drawAxis = makeArrowShader(re)
     const drawPoints = makePointShader(re)
 
-    const modelMatrix = makeMatrixScale(1,1,1)
-    const axisMatrix = matrixMultiplyMatrix(
-      makeMatrixScale(1.05,1.05,1.05),
-      makeMatrixTranslate(-1,0.01,-1)
-    )
+    const modelMatrix = makeMatrixTranslate(-1,0,-1)
+    const axisMatrix = makeMatrixTranslate(-1.05,0.01,-1.05)
 
     const axisBuffer = re.buffer([
       //x
@@ -845,9 +957,9 @@
   	  camera.setup(() => {
         drawGauss({
           points: gridPoints,
+          model: modelMatrix,
           sidelength: sidelength,
           maxheight: maxheight,
-          model: modelMatrix,
           instanceIds: instanceBuffer,
           instances: sidelength*sidelength,
         })
@@ -863,7 +975,7 @@
 
         drawPoints({
             points: pointBuffer,
-            model: axisMatrix,
+            model: modelMatrix,
             color: [0.5,1,1, 1],
             width: 4 * window.devicePixelRatio,
             segments: sampleCount,

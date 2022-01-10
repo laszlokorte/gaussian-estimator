@@ -4,7 +4,7 @@
 
   let w, h;
   let samples = []
-  let view3d = 'no'
+  let view3d = 'pdf'
 
   let sampleLimit = 0
 
@@ -194,9 +194,13 @@
 
   };
 
-  function addSample(evt) {
+  function onClick(evt) {
   	const vmin = Math.min(window.innerWidth, window.innerHeight)
-  	samples = [...samples.slice(0, sampleLimit), {x: evt.pageX/vmin, y: evt.pageY/vmin}]
+  	addSample(evt.pageX/vmin, evt.pageY/vmin)
+  }
+
+  function addSample(x,y) {
+  	samples = [...samples.slice(0, sampleLimit), {x,y}]
   	sampleLimit = samples.length
   }
 
@@ -324,7 +328,7 @@
 </style>
 
 <div class="container">
-	<Canvas style={`display: ${view3d != 'no' ? 'none':'block'}`} width={w} height={h} on:click={addSample}>
+	<Canvas style={`display: ${view3d != 'no' ? 'none':'block'}`} width={w} height={h} on:click={onClick}>
 	  <Layer {render} />
 	</Canvas>
 
