@@ -268,6 +268,8 @@
     }
 
     function zoom(z) {
+      if(!z) return
+        
       state.zoom *= Math.pow(2, z)
       state.zoom = Math.max(0.5, Math.min(2, state.zoom))
     }
@@ -280,24 +282,25 @@
       noclick = false
     })
 
-    let noclick = false
+    let noclick = 0
     el.addEventListener('click', function(evt) {
-      if(noclick) {
-        return
-      }
-      evt.preventDefault()
-      evt.stopPropagation()
-      const s = screenToFloor(evt.pageX, evt.pageY)
-      if(s && addSample) {
-        addSample(s[0], s[1])
+      if(noclick <= 5) {
+        evt.preventDefault()
+        evt.stopPropagation()
+        const s = screenToFloor(evt.pageX, evt.pageY)
+        if(s && addSample) {
+          addSample(s[0], s[1])
+        }
       }
     }, true)
 
 
     el.ownerDocument.addEventListener('mousemove', function(evt) {
       if(state.isDragging) {
-        pan(evt.movementX, evt.movementY)
-        noclick = true
+        noclick++
+        if(noclick > 5) {
+          pan(evt.movementX, evt.movementY)
+        }
       }
     })
 
@@ -310,7 +313,7 @@
         return
       }
       evt.preventDefault()
-      zoom(evt.wheelDelta/400)
+      zoom(evt.wheelDelta/400 || evt.deltaY/100)
     })
 
     var touchState = {
@@ -347,7 +350,7 @@
         event.preventDefault()
       }
       if(evt.touches.length < 2) {
-        noclick = false
+        noclick = 0
       }
     });
 
@@ -360,22 +363,27 @@
       var preventDefault = false;
 
       if(touchState.panBase) {
-        noclick = true
-        var pos = touchCenter(touches)
-        pan((pos.x - touchState.panBase.x)/3, (pos.y - touchState.panBase.y)/3)
-        touchState.panBase.x = pos.x
-        touchState.panBase.y = pos.y
-        preventDefault = true;
+        noclick++
+        if(noclick > 5) {
+          var pos = touchCenter(touches)
+          pan((pos.x - touchState.panBase.x)/3, (pos.y - touchState.panBase.y)/3)
+
+          touchState.panBase.x = pos.x
+          touchState.panBase.y = pos.y
+          preventDefault = true;
+        }
       }
 
       if(touchState.prevDistance) {
-        noclick = true
-        var touches = filterTouches(touchState.touchIds, evt.touches)
-        var distance = touchRadius(touches);
+        noclick++
+        if(noclick > 5) {
+          var touches = filterTouches(touchState.touchIds, evt.touches)
+          var distance = touchRadius(touches);
 
-        zoom((distance - touchState.prevDistance) / 100, touchState.pinchPivot);
-        touchState.prevDistance = distance;
-        preventDefault = true;
+          zoom((distance - touchState.prevDistance) / 100, touchState.pinchPivot);
+          touchState.prevDistance = distance;
+          preventDefault = true;
+        }
       }
 
       if(touches.length >= 2) {
@@ -398,7 +406,7 @@
         return
       }
 
-      if(!noclick) {
+      if(noclick <= 5) {
         const s = screenToFloor(touchState.panBase.x, touchState.panBase.y)
         if(s && addSample) {
           addSample(s[0], s[1])
@@ -483,239 +491,352 @@
   }
 
   function makeArrowShader(regl) {
-      var roundCapJoin = {
-        buffer: regl.buffer([
-          [0, -0.5, 0],
-          [0, -0.5, 1],
-          [0, 0.5, 1],
-          [0, -0.5, 0],
-          [0, 0.5, 1],
-          [0, 0.5, 0],
+    const roundCapJoin = {
+      buffer: regl.buffer([
+        [0, -0.5, 0],
+        [0, -0.5, 1],
+        [0, 0.5, 1],
+        [0, -0.5, 0],
+        [0, 0.5, 1],
+        [0, 0.5, 0],
 
-          [8,0,1],
-          [0.5,3,1],
-          [2,0,1],
+        [8,0,1],
+        [0.5,3,1],
+        [2,0,1],
 
-          [8,0,1],
-          [2,0,1],
-          [0.5,-3,1],
-        ]),
-        count: 12
-      }
-
-      return regl({
-        vert: `
-          precision highp float;
-          attribute vec3 position;
-          attribute vec3 pointA, pointB;
-          uniform float width;
-          uniform vec2 resolution;
-          uniform mat4 model, view, projection;
-
-          void main() {
-            vec4 clip0 = projection * view * model * vec4(pointA, 1.0);
-            vec4 clip1 = projection * view * model * vec4(pointB, 1.0);
-            vec2 screen0 = resolution * (0.5 * clip0.xy/clip0.w + 0.5);
-            vec2 screen1 = resolution * (0.5 * clip1.xy/clip1.w + 0.5);
-            vec2 xBasis = normalize(screen1 - screen0);
-            vec2 yBasis = vec2(-xBasis.y, xBasis.x);
-            vec2 pt0 = screen0 + width * (position.x * xBasis + position.y * yBasis);
-            vec2 pt1 = screen1 + width * (position.x * xBasis + position.y * yBasis);
-            vec2 pt = mix(pt0, pt1, position.z);
-            vec4 clip = mix(clip0, clip1, position.z);
-            gl_Position = vec4(clip.w * (2.0 * pt/resolution - 1.0), clip.z, clip.w);
-          }`,
-
-        frag: `
-          precision highp float;
-          uniform vec4 color;
-          void main() {
-            gl_FragColor = color;
-          }`,
-
-        attributes: {
-          position: {
-            buffer: roundCapJoin.buffer,
-            divisor: 0
-          },
-          pointA: {
-            buffer: regl.prop("points"),
-            divisor: 1,
-            offset: Float32Array.BYTES_PER_ELEMENT * 0,
-            stride: Float32Array.BYTES_PER_ELEMENT * 6
-          },
-          pointB: {
-            buffer: regl.prop("points"),
-            divisor: 1,
-            offset: Float32Array.BYTES_PER_ELEMENT * 3,
-            stride: Float32Array.BYTES_PER_ELEMENT * 6
-          }
-        },
-
-        uniforms: {
-          width: regl.prop("width"),
-          color: regl.prop("color"),
-          model: regl.prop("model"),
-          resolution: regl.prop("resolution")
-        },
-
-        depth: {
-          enable: regl.prop("depth")
-        },
-
-        cull: {
-          enable: true,
-          face: "back"
-        },
-
-        blend: {
-          enable: true,
-          func: {
-            srcRGB: 'src alpha',
-            srcAlpha: 1,
-            dstRGB: 'one minus src alpha',
-            dstAlpha: 1
-          },
-          equation: {
-            rgb: 'add',
-            alpha: 'add'
-          },
-          color: [0, 0, 0, 0]
-        },
-
-        stencil: {
-          enable: (_, props) => props.stencilId >= 0,
-          func: {
-            cmp: 'equal',
-            ref: 0xff,
-            mask: (_, props) => 1 << props.stencilId,
-          },
-          op: {
-            fail: 'keep',
-            zfail: 'keep',
-            zpass: 'keep'
-          },
-        },
-
-        polygonOffset: {
-          enable: true,
-          offset: {
-            factor: 0,
-            units: 32
-          }
-        },
-
-
-        count: roundCapJoin.count,
-        instances: regl.prop("segments")
-      });
+        [8,0,1],
+        [2,0,1],
+        [0.5,-3,1],
+      ]),
+      count: 12
     }
 
-    function makePointShader(regl) {
-      var roundCapJoin = {
-        buffer: regl.buffer([
-          [-1,-1],
-          [-1,1],
-          [1,1],
-          [-1,-1],
-          [1,1],
-          [1,-1],
-        ]),
-        count: 6
-      }
+    return regl({
+      vert: `
+        precision highp float;
+        attribute vec3 position;
+        attribute vec3 pointA, pointB;
+        uniform float width;
+        uniform vec2 resolution;
+        uniform mat4 model, view, projection;
 
-      return regl({
-        vert: `
-          precision highp float;
-          attribute vec2 position;
-          attribute vec2 point;
-          uniform float width;
-          uniform vec2 resolution;
-          uniform mat4 model, view, projection;
+        void main() {
+          vec4 clip0 = projection * view * model * vec4(pointA, 1.0);
+          vec4 clip1 = projection * view * model * vec4(pointB, 1.0);
+          vec2 screen0 = resolution * (0.5 * clip0.xy/clip0.w + 0.5);
+          vec2 screen1 = resolution * (0.5 * clip1.xy/clip1.w + 0.5);
+          vec2 xBasis = normalize(screen1 - screen0);
+          vec2 yBasis = vec2(-xBasis.y, xBasis.x);
+          vec2 pt0 = screen0 + width * (position.x * xBasis + position.y * yBasis);
+          vec2 pt1 = screen1 + width * (position.x * xBasis + position.y * yBasis);
+          vec2 pt = mix(pt0, pt1, position.z);
+          vec4 clip = mix(clip0, clip1, position.z);
+          gl_Position = vec4(clip.w * (2.0 * pt/resolution - 1.0), clip.z, clip.w);
+        }`,
 
-          void main() {
-            vec4 clip = projection * view * model * vec4(point.x, 0.0, point.y, 1.0);
-            gl_Position = vec4(clip.x + width*clip.w*position.x/resolution.x, clip.y + width*clip.w*position.y/resolution.y, clip.z, clip.w);
-          }`,
+      frag: `
+        precision highp float;
+        uniform vec4 color;
+        void main() {
+          gl_FragColor = color;
+        }`,
 
-        frag: `
-          precision highp float;
-          uniform vec4 color;
-          void main() {
-            gl_FragColor = color;
-          }`,
-
-        attributes: {
-          position: {
-            buffer: roundCapJoin.buffer,
-            divisor: 0
-          },
-          point: {
-            buffer: regl.prop("points"),
-            divisor: 1,
-            offset: Float32Array.BYTES_PER_ELEMENT * 0,
-            stride: Float32Array.BYTES_PER_ELEMENT * 2
-          },
+      attributes: {
+        position: {
+          buffer: roundCapJoin.buffer,
+          divisor: 0
         },
-
-        uniforms: {
-          width: regl.prop("width"),
-          color: regl.prop("color"),
-          model: regl.prop("model"),
-          resolution: regl.prop("resolution")
+        pointA: {
+          buffer: regl.prop("points"),
+          divisor: 1,
+          offset: Float32Array.BYTES_PER_ELEMENT * 0,
+          stride: Float32Array.BYTES_PER_ELEMENT * 6
         },
+        pointB: {
+          buffer: regl.prop("points"),
+          divisor: 1,
+          offset: Float32Array.BYTES_PER_ELEMENT * 3,
+          stride: Float32Array.BYTES_PER_ELEMENT * 6
+        }
+      },
 
-        depth: {
-          enable: regl.prop("depth")
+      uniforms: {
+        width: regl.prop("width"),
+        color: regl.prop("color"),
+        model: regl.prop("model"),
+        resolution: regl.prop("resolution")
+      },
+
+      depth: {
+        enable: regl.prop("depth")
+      },
+
+      cull: {
+        enable: true,
+        face: "back"
+      },
+
+      blend: {
+        enable: true,
+        func: {
+          srcRGB: 'src alpha',
+          srcAlpha: 1,
+          dstRGB: 'one minus src alpha',
+          dstAlpha: 1
         },
-
-        cull: {
-          enable: false,
-          face: "back"
+        equation: {
+          rgb: 'add',
+          alpha: 'add'
         },
+        color: [0, 0, 0, 0]
+      },
 
-        blend: {
-          enable: true,
-          func: {
-            srcRGB: 'src alpha',
-            srcAlpha: 1,
-            dstRGB: 'one minus src alpha',
-            dstAlpha: 1
-          },
-          equation: {
-            rgb: 'add',
-            alpha: 'add'
-          },
-          color: [0, 0, 0, 0]
-        },
-
-        stencil: {
-          enable: (_, props) => props.stencilId >= 0,
-          func: {
-            cmp: 'equal',
-            ref: 0xff,
-            mask: (_, props) => 1 << props.stencilId,
-          },
-          op: {
-            fail: 'keep',
-            zfail: 'keep',
-            zpass: 'keep'
-          },
-        },
-
-        polygonOffset: {
-          enable: true,
-          offset: {
-            factor: 0,
-            units: 32
-          }
-        },
+      polygonOffset: {
+        enable: true,
+        offset: {
+          factor: 0,
+          units: 32
+        }
+      },
 
 
-        count: roundCapJoin.count,
-        instances: regl.prop("segments")
-      });
+      count: roundCapJoin.count,
+      instances: regl.prop("segments")
+    });
+  }
+
+  function makePointShader(regl) {
+    const roundCapJoin = {
+      buffer: regl.buffer([
+        [-1,-1],
+        [-1,1],
+        [1,1],
+        [-1,-1],
+        [1,1],
+        [1,-1],
+      ]),
+      count: 6
     }
+
+    return regl({
+      vert: `
+        precision highp float;
+        attribute vec2 position;
+        attribute vec2 point;
+        uniform float width;
+        uniform vec2 resolution;
+        uniform mat4 model, view, projection;
+
+        void main() {
+          vec4 clip = projection * view * model * vec4(point.x, 0.0, point.y, 1.0);
+          gl_Position = vec4(clip.x + width*clip.w*position.x/resolution.x, clip.y + width*clip.w*position.y/resolution.y, clip.z, clip.w);
+        }`,
+
+      frag: `
+        precision highp float;
+        uniform vec4 color;
+        void main() {
+          gl_FragColor = color;
+        }`,
+
+      attributes: {
+        position: {
+          buffer: roundCapJoin.buffer,
+          divisor: 0
+        },
+        point: {
+          buffer: regl.prop("points"),
+          divisor: 1,
+          offset: Float32Array.BYTES_PER_ELEMENT * 0,
+          stride: Float32Array.BYTES_PER_ELEMENT * 2
+        },
+      },
+
+      uniforms: {
+        width: regl.prop("width"),
+        color: regl.prop("color"),
+        model: regl.prop("model"),
+        resolution: regl.prop("resolution")
+      },
+
+      depth: {
+        enable: regl.prop("depth")
+      },
+
+      cull: {
+        enable: false,
+        face: "back"
+      },
+
+      blend: {
+        enable: true,
+        func: {
+          srcRGB: 'src alpha',
+          srcAlpha: 1,
+          dstRGB: 'one minus src alpha',
+          dstAlpha: 1
+        },
+        equation: {
+          rgb: 'add',
+          alpha: 'add'
+        },
+        color: [0, 0, 0, 0]
+      },
+
+    
+
+      polygonOffset: {
+        enable: true,
+        offset: {
+          factor: 0,
+          units: 32
+        }
+      },
+
+
+      count: roundCapJoin.count,
+      instances: regl.prop("segments")
+    });
+  }
+
+  function roundCapJoinGeometry(regl, resolution) {
+    const instanceRoundRound = [
+      [0, -0.5, 0],
+      [0, -0.5, 1],
+      [0, 0.5, 1],
+      [0, -0.5, 0],
+      [0, 0.5, 1],
+      [0, 0.5, 0]
+    ];
+    // Add the left cap.
+    for (let step = 0; step < resolution; step++) {
+      const theta0 = Math.PI / 2 + ((step + 0) * Math.PI) / resolution;
+      const theta1 = Math.PI / 2 + ((step + 1) * Math.PI) / resolution;
+      instanceRoundRound.push([0, 0, 0]);
+      instanceRoundRound.push([
+        0.5 * Math.cos(theta0),
+        0.5 * Math.sin(theta0),
+        0
+      ]);
+      instanceRoundRound.push([
+        0.5 * Math.cos(theta1),
+        0.5 * Math.sin(theta1),
+        0
+      ]);
+    }
+    // Add the right cap.
+    for (let step = 0; step < resolution; step++) {
+      const theta0 = (3 * Math.PI) / 2 + ((step + 0) * Math.PI) / resolution;
+      const theta1 = (3 * Math.PI) / 2 + ((step + 1) * Math.PI) / resolution;
+      instanceRoundRound.push([0, 0, 1]);
+      instanceRoundRound.push([
+        0.5 * Math.cos(theta0),
+        0.5 * Math.sin(theta0),
+        1
+      ]);
+      instanceRoundRound.push([
+        0.5 * Math.cos(theta1),
+        0.5 * Math.sin(theta1),
+        1
+      ]);
+    }
+    return {
+      buffer: regl.buffer(instanceRoundRound),
+      count: instanceRoundRound.length
+    };
+  }
+
+  function makeLineShader(regl, resolution) {
+    const roundCapJoin = roundCapJoinGeometry(regl, resolution);
+    return regl({
+      vert: `
+        precision highp float;
+        attribute vec3 position;
+        attribute vec3 pointA, pointB;
+        uniform float width;
+        uniform vec2 resolution;
+        uniform vec3 axisFilter;
+        uniform vec3 axisShift;
+        uniform mat4 model, view, projection;
+
+        void main() {
+          vec4 clip0 = projection * view * model * vec4(pointA, 1.0);
+          vec4 clip1 = projection * view * model * vec4(pointB, 1.0);
+          vec2 screen0 = resolution * (0.5 * clip0.xy/clip0.w + 0.5);
+          vec2 screen1 = resolution * (0.5 * clip1.xy/clip1.w + 0.5);
+          vec2 xBasis = normalize(screen1 - screen0);
+          if(pointA==pointB) {
+            xBasis = vec2(1.0,0.0);
+          }
+          vec2 yBasis = vec2(-xBasis.y, xBasis.x);
+          vec2 pt0 = screen0 + width * (position.x * xBasis + position.y * yBasis);
+          vec2 pt1 = screen1 + width * (position.x * xBasis + position.y * yBasis);
+          vec2 pt = mix(pt0, pt1, position.z);
+          vec4 clip = mix(clip0, clip1, position.z);
+          gl_Position = vec4(clip.w * (2.0 * pt/resolution - 1.0), clip.z, clip.w);
+        }`,
+
+      frag: `
+        precision highp float;
+        uniform vec4 color;
+        void main() {
+          gl_FragColor = color;
+        }`,
+
+      attributes: {
+        position: {
+          buffer: roundCapJoin.buffer,
+          divisor: 0
+        },
+        pointA: {
+          buffer: regl.prop("points"),
+          divisor: 1,
+          offset: (_, props) => ((props.segmentOffset??0) * 3 * Float32Array.BYTES_PER_ELEMENT) + Float32Array.BYTES_PER_ELEMENT * 0,
+          stride: Float32Array.BYTES_PER_ELEMENT * 3
+        },
+        pointB: {
+          buffer: regl.prop("points"),
+          divisor: 1,
+          offset: (_, props) => ((props.segmentOffset??0) * 3 * Float32Array.BYTES_PER_ELEMENT) + Float32Array.BYTES_PER_ELEMENT * 3 * (props.segmentLength??1),
+          stride: Float32Array.BYTES_PER_ELEMENT * 3
+        }
+      },
+
+      uniforms: {
+        width: regl.prop("width"),
+        color: regl.prop("color"),
+        model: regl.prop("model"),
+        resolution: regl.prop("resolution")
+      },
+
+      depth: {
+        enable: regl.prop("depth")
+      },
+
+      cull: {
+        enable: true,
+        face: "back"
+      },
+
+      blend: {
+        enable: true,
+        func: {
+          srcRGB: 'src alpha',
+          srcAlpha: 1,
+          dstRGB: 'one minus src alpha',
+          dstAlpha: 1
+        },
+        equation: {
+          rgb: 'add',
+          alpha: 'add'
+        },
+        color: [0, 0, 0, 0]
+      },
+
+      count: roundCapJoin.count,
+      instances: regl.prop("segments")
+    });
+  }
 
   function makeColorGridShader(regl) {
   	const planeBuffer = regl.buffer([
@@ -819,6 +940,8 @@
   const sidelength = 256
   let gridPoints
   let pointBuffer
+  let lineBufferX
+  let lineBufferY
   let sampleCount = 0
   let maxheight = 1
 
@@ -833,66 +956,110 @@
   }
 
    
-    $:if(samples && pointBuffer) {
-      pointBuffer(samples.flat(1))
-      sampleCount = samples.length
-    } else {
-      sampleCount = 0
-    }
-  
-
-    $:if(gridPoints && variance.x && variance.y && Math.abs(correlation) <0.9999) {
-
-      const A = 1/(2*Math.PI*Math.sqrt(variance.x*variance.y)*(Math.sqrt(1-correlation*correlation)||1))
-      const density = Array(sidelength*(sidelength+1)+1).fill(null).map((_,i)=> {
-          const [x,y] = [
-            Math.floor(i/sidelength)/sidelength, 
-            (i % sidelength)/sidelength
-          ]
-
-            return A * Math.exp(
-              -0.5/((1-correlation*correlation)||1) * (
-                Math.pow(x-mean.x, 2)/variance.x+
-                Math.pow(y-mean.y, 2)/variance.y-
-                2*correlation*(x-mean.x)*(y-mean.y)/Math.sqrt(variance.x*variance.y)
-              ))
-        })
+  $:if(samples && pointBuffer) {
+    pointBuffer(samples.flat(1))
+    sampleCount = samples.length
+  } else {
+    sampleCount = 0
+  }
 
 
+  $:if(gridPoints && variance.x && variance.y && Math.abs(correlation) <0.9999) {
+    
+
+    const edgeX = Array(sidelength).fill(null).map((_,i) => [2*i/sidelength, 
+      (2/sidelength/variance.x*Math.sqrt(2*Math.PI)) * Math.exp(-0.5*Math.pow((i/sidelength - mean.x), 2) / (variance.x*variance.x)/4/4)
+      , 0])
+    const edgeY = Array(sidelength).fill(null).map((_,i) => [0, 
+      (2/sidelength/variance.y*Math.sqrt(2*Math.PI)) * Math.exp(-0.5*Math.pow((i/sidelength - mean.y), 2) / (variance.y*variance.y)/4/4)
+      , 2*i/sidelength])
+
+
+
+    const A = 1/(2*Math.PI*Math.sqrt(variance.x*variance.y)*(Math.sqrt(1-correlation*correlation)||1))
+    
+    const density = Array(sidelength*(sidelength+1)+1).fill(null).map((_,i)=> {
+        const xindex = Math.floor(i/sidelength)
+        const yindex = (i % sidelength)
+        const [x,y] = [
+          xindex/sidelength, 
+          yindex/sidelength
+        ]
+
+        return A * Math.exp(
+          -0.5/((1-correlation*correlation)||1) * (
+            Math.pow(x-mean.x, 2)/variance.x+
+            Math.pow(y-mean.y, 2)/variance.y-
+            2*correlation*(x-mean.x)*(y-mean.y)/Math.sqrt(variance.x*variance.y)
+          ))
+      })
+
+    if(lineBufferX && lineBufferY) {
       if(view == 'pdf') {
-        loadHeights(density)
+        lineBufferX(edgeX)
+        lineBufferY(edgeY)
       } else {
-        const cumulation = Array(sidelength*(sidelength+1)+1).fill(0)
+        let sumX = 0
+        for (let i = 0; i < edgeX.length; i++) {
+          sumX+=edgeX[i][1]
+          edgeX[i][1] = sumX
+        }
+        let sumY = 0
+        for (let j = 0; j < edgeY.length; j++) {
+          sumY+=edgeY[j][1]
+          edgeY[j][1] = sumY
+        }
+        lineBufferX(edgeX.map(([a,b,c]) => [a,8*b/sidelength,c]))
+        lineBufferY(edgeY.map(([a,b,c]) => [a,8*b/sidelength,c]))
+      }
+    }
 
-        cumulation[0] = density[0]
+    if(view == 'pdf') {
+      loadHeights(density)
+    } else {
+      const cumulation = Array(sidelength*(sidelength+1)+1).fill(0)
 
-        for (let i = 1; i <= sidelength; i++) {
-            cumulation[(0)*(sidelength)+(i)] = cumulation[(0)*(sidelength)+(i - 1)] + density[(0)*(sidelength)+(i)];
-        }
-        for (let i = 1; i <= sidelength; i++) {
-            cumulation[(i)*(sidelength)+(0)] = cumulation[(i - 1)*(sidelength)+(0)] + density[(i)*(sidelength)+(0)];
-        }
-     
-        for (let i = 1; i <= sidelength; i++)
-        {
-            for (let j = 2; j <= sidelength; j++) {
-                cumulation[(i)*(sidelength)+(j)] = cumulation[(i - 1)*(sidelength)+(j)] + cumulation[(i)*(sidelength)+(j - 1)] - cumulation[(i - 1)*(sidelength)+(j - 1)] + density[(i)*(sidelength)+(j)] / 256;
-            }
-        }
+      cumulation[0] = density[0]
 
-        const max  = 8/cumulation[cumulation.length - 2]
-        const l = cumulation.length
-        for (let i = 0; i <= l; i++)
-        {
-            cumulation[i] *= max
-        }
-        loadHeights(cumulation)
+      for (let i = 1; i <= sidelength; i++) {
+          cumulation[(0)*(sidelength)+(i)] = cumulation[(0)*(sidelength)+(i - 1)] + density[(0)*(sidelength)+(i)];
+      }
+      for (let i = 1; i <= sidelength; i++) {
+          cumulation[(i)*(sidelength)+(0)] = cumulation[(i - 1)*(sidelength)+(0)] + density[(i)*(sidelength)+(0)];
+      }
+   
+      for (let i = 1; i <= sidelength; i++)
+      {
+          for (let j = 2; j <= sidelength; j++) {
+              cumulation[(i)*(sidelength)+(j)] = cumulation[(i - 1)*(sidelength)+(j)] + cumulation[(i)*(sidelength)+(j - 1)] - cumulation[(i - 1)*(sidelength)+(j - 1)] + density[(i)*(sidelength)+(j)] / 256;
+          }
       }
 
-    } else if(gridPoints) {
-      loadHeights(Array(sidelength*(sidelength+1)+1).fill(0))
+      const max  = 8/cumulation[cumulation.length - 2]
+      const l = cumulation.length
+      for (let i = 0; i <= l; i++)
+      {
+          cumulation[i] *= max
+      }
+      loadHeights(cumulation)
     }
-  
+
+  } else if(gridPoints) {
+    loadHeights(Array(sidelength*(sidelength+1)+1).fill(0))
+
+    const edgeX = Array(sidelength).fill(null).map((_,i) => [2*i/sidelength, 
+      0
+      , 0])
+    const edgeY = Array(sidelength).fill(null).map((_,i) => [0, 
+     0
+      , 2*i/sidelength])
+
+    if(lineBufferX && lineBufferY) {
+      lineBufferX(edgeX)
+      lineBufferY(edgeY)
+    }
+  }
+
 
   
 
@@ -915,9 +1082,12 @@
     const drawGauss = makeColorGridShader(re)
     const drawAxis = makeArrowShader(re)
     const drawPoints = makePointShader(re)
+    const drawLine = makeLineShader(re)
 
     const modelMatrix = makeMatrixTranslate(-1,0,-1)
     const axisMatrix = makeMatrixTranslate(-1.05,0.01,-1.05)
+    const edgeYMatrix = makeMatrixTranslate(-1.1,0,-1)
+    const edgeXMatrix = makeMatrixTranslate(-1,0,-1.1)
 
     const axisBuffer = re.buffer([
       //x
@@ -935,6 +1105,8 @@
     ]);
 
     pointBuffer = re.buffer();
+    lineBufferX = re.buffer(Array(sidelength).fill(null).map((_,i) => [i/sidelength*2, 0, 0]));
+    lineBufferY = re.buffer(Array(sidelength).fill(null).map((_,i) => [0,0,i/sidelength*2]));
     const instanceBuffer = re.buffer(Array(sidelength*sidelength).fill(null).map((_, i) => i));
 
     gridPoints = re.buffer(Array(sidelength*(sidelength+1)+1).fill(null).map((_,i)=>0))
@@ -960,24 +1132,44 @@
           instances: sidelength*sidelength,
         })
         drawAxis({
-            points: axisBuffer,
-            model: axisMatrix,
-            color: [0,0,0, 1],
-            width: 2 * window.devicePixelRatio,
-            segments: 3,
-            resolution: [gl.width,gl.height],
-            depth: false,
-          })
+          points: axisBuffer,
+          model: axisMatrix,
+          color: [0,0,0, 1],
+          width: 2 * window.devicePixelRatio,
+          segments: 3,
+          resolution: [gl.width,gl.height],
+          depth: true,
+        })
 
         drawPoints({
-            points: pointBuffer,
-            model: modelMatrix,
-            color: [0.5,0.5,1, 1],
-            width: 4 * window.devicePixelRatio,
-            segments: sampleCount,
-            resolution: [gl.width,gl.height],
-            depth: false,
-          })
+          points: pointBuffer,
+          model: modelMatrix,
+          color: [0.5,0.5,1, 1],
+          width: 4 * window.devicePixelRatio,
+          segments: sampleCount,
+          resolution: [gl.width,gl.height],
+          depth: false,
+        })
+
+        drawLine({
+          points: lineBufferX,
+          model: edgeXMatrix,
+          color: [0,0.9,0, 1],
+          width: 2 * window.devicePixelRatio,
+          segments: sidelength-1,
+          resolution: [gl.width,gl.height],
+          depth: true,
+        })
+
+        drawLine({
+          points: lineBufferY,
+          model: edgeYMatrix,
+          color: [0.9,0,0, 1],
+          width: 2 * window.devicePixelRatio,
+          segments: sidelength-1,
+          resolution: [gl.width,gl.height],
+          depth: true,
+        })
   	  })
   	})
 

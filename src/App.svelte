@@ -198,8 +198,10 @@
   }
 
   function addSample(x,y) {
-  	samples = [...samples.slice(0, sampleLimit), {x,y}]
-  	sampleLimit = samples.length
+  	if(x > -.5 && y > -.5 && x < 1.5 && y < 1.5) {
+	  	samples = [...samples.slice(0, sampleLimit), {x,y}]
+	  	sampleLimit = samples.length
+  	}
   }
 
   function clearSamples() {
@@ -281,6 +283,7 @@
 		display: grid;
 		grid-template-columns: [full-start key-start] max-content [key-end value-start] auto [value-end full-end];
 		gap: 0.5em 1em;
+		align-items: center;
 	}
 
 	dt {
@@ -304,8 +307,12 @@
     margin: 0;
   }
 
+  input[type=range] {
+  	padding: 1em 0.4em;
+  }
+
   .hidden {
-  	display: none;
+  	display: none !important;
   }
 
 
